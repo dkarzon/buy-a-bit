@@ -231,9 +231,33 @@ export const paymentRouter = router({
 
   getStatus: publicProcedure
     .input(paymentGetStatusInput)
-    .query(async ({ input }) => {
-      // Day 2: order status for confirmation page
-      void input;
-      throw new Error("Not implemented");
+    .query(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .select({
+          orderId: orders.id,
+          status: orders.status,
+          customerName: orders.customerName,
+          productName: products.name,
+          priceCents: products.priceCents,
+        })
+        .from(orders)
+        .innerJoin(products, eq(orders.productId, products.id))
+        .where(eq(orders.id, input.session))
+        .limit(1);
+
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Order not found",
+        });
+      }
+
+      return {
+        orderId: row.orderId,
+        status: row.status,
+        productName: row.productName,
+        customerName: row.customerName,
+        priceCents: row.priceCents,
+      };
     }),
 });
