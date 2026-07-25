@@ -3,26 +3,27 @@ import {
   paymentGetCheckoutContextInput,
   paymentGetStatusInput,
 } from "@buy-a-bit/shared";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import type { db as DbClient } from "../../db/index.js";
 import {
-  customerPayers,
   merchants,
   orderItems,
   orders,
   products,
 } from "../../db/schema.js";
 import {
+  findCustomerPayer,
+  vaultCustomerCard,
+} from "../../services/customer-payers.js";
+import {
   summarizeOrderItems,
   toPaymentLines,
 } from "../../services/orders.js";
-import type { PinchClient } from "../../services/pinch.js";
 import {
   isPinchLiveMode,
   orderStatusFromPinchPayment,
-  parsePinchExpiry,
   pinchClientForMerchant,
   publishableKeyForMerchant,
   splitCustomerName,
@@ -42,64 +43,6 @@ async function loadOrderItems(db: typeof DbClient, orderId: string) {
     .from(orderItems)
     .innerJoin(products, eq(orderItems.productId, products.id))
     .where(eq(orderItems.orderId, orderId));
-}
-
-async function findCustomerPayer(
-  db: typeof DbClient,
-  userId: string,
-  merchantId: string,
-) {
-  return (
-    (await db.query.customerPayers.findFirst({
-      where: and(
-        eq(customerPayers.userId, userId),
-        eq(customerPayers.merchantId, merchantId),
-      ),
-    })) ?? null
-  );
-}
-
-/** Get or create the customer's per-merchant Pinch payer row (race-safe). */
-async function getOrCreateCustomerPayer(
-  db: typeof DbClient,
-  pinch: PinchClient,
-  input: {
-    userId: string;
-    merchantId: string;
-    firstName: string;
-    lastName?: string;
-    emailAddress: string;
-    mobileNumber?: string;
-  },
-) {
-  const existing = await findCustomerPayer(db, input.userId, input.merchantId);
-  if (existing) return existing;
-
-  const payer = await pinch.createPayer({
-    firstName: input.firstName,
-    lastName: input.lastName,
-    emailAddress: input.emailAddress,
-    mobileNumber: input.mobileNumber,
-  });
-
-  const [created] = await db
-    .insert(customerPayers)
-    .values({
-      userId: input.userId,
-      merchantId: input.merchantId,
-      pinchPayerId: payer.id,
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (created) return created;
-
-  // Concurrent request won the unique (userId, merchantId) race — reuse its row
-  const winner = await findCustomerPayer(db, input.userId, input.merchantId);
-  if (!winner) {
-    throw new Error("Failed to persist customer payer");
-  }
-  return winner;
 }
 
 export const paymentRouter = router({
@@ -162,6 +105,8 @@ export const paymentRouter = router({
 
       return {
         orderId: row.orderId,
+        merchantId: row.merchant.id,
+        merchantName: row.merchant.businessName,
         productName: summarizeOrderItems(lines),
         customerName: row.customerName,
         totalCents: row.totalCents,
@@ -323,48 +268,27 @@ export const paymentRouter = router({
         useStoredSource = true;
       } else if (input.saveCard && sessionUser && ownsOrder) {
         // Vault-then-charge: the CaptureJS token is consumed by vaulting, so
-        // the payment below runs against the stored source. One card per
-        // merchant — an existing source is deleted before the new one is
-        // vaulted so the payer never holds two.
+        // the payment below runs against the stored source.
         try {
-          const saved = await getOrCreateCustomerPayer(ctx.db, pinch, {
+          if (!input.creditCardToken) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Card details are required to save a card",
+            });
+          }
+          const saved = await vaultCustomerCard(ctx.db, pinch, {
             userId: sessionUser.id,
             merchantId: merchant.id,
             firstName,
             lastName: lastName || undefined,
             emailAddress: order.customerEmail,
             mobileNumber: order.customerPhone ?? undefined,
+            creditCardToken: input.creditCardToken,
           });
-
-          if (saved.pinchSourceId) {
-            await pinch.deletePaymentSource(
-              saved.pinchPayerId,
-              saved.pinchSourceId,
-            );
-          }
-
-          const source = await pinch.createPaymentSource({
-            payerId: saved.pinchPayerId,
-            creditCardToken: input.creditCardToken!,
-          });
-          const expiry = parsePinchExpiry(source.expiryDate);
-
-          await ctx.db
-            .update(customerPayers)
-            .set({
-              pinchSourceId: source.id,
-              cardScheme: source.cardScheme,
-              cardLast4: source.displayCardNumber,
-              cardExpiryMonth: expiry.month,
-              cardExpiryYear: expiry.year,
-              cardHolderName: source.cardHolderName,
-              cardSavedAt: new Date(),
-            })
-            .where(eq(customerPayers.id, saved.id));
-
           payerId = saved.pinchPayerId;
           useStoredSource = true;
         } catch (err) {
+          if (err instanceof TRPCError) throw err;
           // No charge has been attempted yet — safe to abort
           throw new TRPCError({
             code: "BAD_GATEWAY",

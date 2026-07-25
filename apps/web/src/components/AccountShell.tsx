@@ -35,7 +35,7 @@ export function AccountShell({ children }: { children: ReactNode }) {
             to="/account/payment-methods"
             className={({ isActive }) => (isActive ? "active" : "")}
           >
-            Payment methods
+            Payment settings
           </NavLink>
         </nav>
         {children}

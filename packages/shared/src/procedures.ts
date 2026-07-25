@@ -183,6 +183,8 @@ export const savedCardSummary = z.object({
 
 export const paymentGetCheckoutContextOutput = z.object({
   orderId: z.string().uuid(),
+  merchantId: z.string().uuid(),
+  merchantName: z.string(),
   /** Summary label for single-line UI */
   productName: z.string(),
   customerName: z.string(),
@@ -265,4 +267,25 @@ export const accountPaymentMethodOutput = z.object({
 
 export const accountDeletePaymentMethodInput = z.object({
   id: z.string().uuid(),
+});
+
+export const accountMerchantForCardOutput = z.object({
+  id: z.string().uuid(),
+  businessName: z.string(),
+});
+
+export const accountGetSaveCardContextInput = z.object({
+  merchantId: z.string().uuid(),
+});
+
+export const accountGetSaveCardContextOutput = z.object({
+  merchantId: z.string().uuid(),
+  merchantName: z.string(),
+  publishableKey: z.string().min(1),
+});
+
+export const accountSavePaymentMethodInput = z.object({
+  merchantId: z.string().uuid(),
+  /** CaptureJS token — never send raw card numbers to the API */
+  creditCardToken: z.string().min(1),
 });

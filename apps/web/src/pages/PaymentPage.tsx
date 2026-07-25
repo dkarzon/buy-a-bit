@@ -1,32 +1,13 @@
 import { Check, CreditCard, LockKeyhole, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { Brand, Button, Field, Money } from "../components/ui";
+import { Brand, Button, Money } from "../components/ui";
 import { authClient } from "../lib/auth-client";
 import { apiErrorMessage } from "../lib/api-data";
 import type { PaymentCheckoutContext } from "../lib/api-data";
 import { trpc } from "../lib/trpc";
-
-type CaptureClient = {
-  createToken(input: {
-    sourceType: "credit-card";
-    cardNumber: string;
-    expiryMonth: string;
-    expiryYear: string;
-    cvc: string;
-    cardHolderName: string;
-  }): Promise<{ token: string }>;
-};
-
-declare global {
-  interface Window {
-    Pinch?: {
-      Capture(options: { publishableKey: string }): CaptureClient;
-    };
-  }
-}
 
 function schemeLabel(scheme: string | null) {
   if (!scheme) return "Card";
@@ -34,18 +15,15 @@ function schemeLabel(scheme: string | null) {
 }
 
 /**
- * Custom payment page — CaptureJS tokenises a new card in-browser, or charges
- * the signed-in customer's saved card via payment.charge (useSavedCard).
+ * Secure payment — charges the customer's saved card for this store only.
+ * Card numbers are entered under Account → Payment settings, never here.
  */
 export function PaymentPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { data: session } = authClient.useSession();
-  const [scriptReady, setScriptReady] = useState(Boolean(window.Pinch));
   const [error, setError] = useState<string | null>(null);
-  const [method, setMethod] = useState<"saved" | "new" | null>(null);
-  const [saveCard, setSaveCard] = useState(true);
   const checkoutQuery = trpc.payment.getCheckoutContext.useQuery(
     { orderId: orderId ?? "" },
     { enabled: Boolean(orderId), retry: false },
@@ -53,31 +31,7 @@ export function PaymentPage() {
   const charge = trpc.payment.charge.useMutation();
   const checkout = checkoutQuery.data as PaymentCheckoutContext | undefined;
   const savedCard = checkout?.savedCard ?? null;
-  const activeMethod = method ?? (savedCard ? "saved" : "new");
   const signedIn = Boolean(session?.user);
-
-  useEffect(() => {
-    if (window.Pinch) {
-      setScriptReady(true);
-      return;
-    }
-    const existing = document.querySelector<HTMLScriptElement>("script[data-pinch-capture]");
-    const script = existing ?? document.createElement("script");
-    const loaded = () => setScriptReady(true);
-    const failed = () => setError("Secure card fields could not be loaded.");
-    script.addEventListener("load", loaded);
-    script.addEventListener("error", failed);
-    if (!existing) {
-      script.src = "https://cdn.getpinch.com.au/capturejs/pinch.capture.v2.js";
-      script.async = true;
-      script.dataset.pinchCapture = "true";
-      document.head.appendChild(script);
-    }
-    return () => {
-      script.removeEventListener("load", loaded);
-      script.removeEventListener("error", failed);
-    };
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -85,36 +39,20 @@ export function PaymentPage() {
       setError("Payment is not ready. Please try again.");
       return;
     }
+    if (!signedIn) {
+      setError("Sign in and save a card in Payment settings to pay.");
+      return;
+    }
+    if (!savedCard) {
+      setError("Add a saved card for this store in Payment settings first.");
+      return;
+    }
 
     setError(null);
     try {
-      if (activeMethod === "saved") {
-        const result = (await charge.mutateAsync({
-          orderId,
-          useSavedCard: true,
-        })) as { confirmationPath: string };
-        navigate(result.confirmationPath);
-        return;
-      }
-
-      if (!window.Pinch) {
-        setError("Secure card tokenisation is not ready. Please try again.");
-        return;
-      }
-      const form = new FormData(event.currentTarget);
-      const capture = window.Pinch.Capture({ publishableKey: checkout.publishableKey });
-      const { token } = await capture.createToken({
-        sourceType: "credit-card",
-        cardHolderName: String(form.get("cardHolderName") ?? ""),
-        cardNumber: String(form.get("cardNumber") ?? "").replace(/\s/g, ""),
-        expiryMonth: String(form.get("expiryMonth") ?? ""),
-        expiryYear: String(form.get("expiryYear") ?? ""),
-        cvc: String(form.get("cvc") ?? ""),
-      });
       const result = (await charge.mutateAsync({
         orderId,
-        creditCardToken: token,
-        saveCard: checkout.canSaveCard && saveCard,
+        useSavedCard: true,
       })) as { confirmationPath: string };
       navigate(result.confirmationPath);
     } catch (caught) {
@@ -138,6 +76,8 @@ export function PaymentPage() {
     );
   }
 
+  const paymentSettingsPath = `/account/payment-methods?merchantId=${checkout.merchantId}&returnTo=${encodeURIComponent(location.pathname)}`;
+
   return (
     <div className="checkout-page">
       <header className="checkout-header"><Brand compact /></header>
@@ -145,7 +85,9 @@ export function PaymentPage() {
         <div>
           <p className="eyebrow">Secure payment</p>
           <h1 className="mt-2 text-2xl font-semibold">{checkout.productName}</h1>
-          <p className="mt-1 text-sm text-muted">Order for {checkout.customerName}</p>
+          <p className="mt-1 text-sm text-muted">
+            {checkout.merchantName} · Order for {checkout.customerName}
+          </p>
         </div>
         <section className="summary-card">
           <div className="summary-total border-0 pt-0">
@@ -153,15 +95,28 @@ export function PaymentPage() {
             <strong><Money cents={checkout.totalCents} /></strong>
           </div>
         </section>
-        {savedCard && (
-          <section className="checkout-section">
-            <h2>Pay with</h2>
-            <div className="saved-methods">
-              <button
-                type="button"
-                className={activeMethod === "saved" ? "selected" : ""}
-                onClick={() => setMethod("saved")}
+
+        <section className="checkout-section">
+          <h2 className="flex items-center gap-2"><CreditCard size={18} /> Payment method</h2>
+
+          {!signedIn && (
+            <div className="settings-card">
+              <p className="text-sm text-muted">
+                Sign in, save a card in Payment settings, then return here to pay.
+              </p>
+              <Link
+                className="button button-primary"
+                to="/account/login"
+                state={{ from: location.pathname }}
               >
+                Sign in
+              </Link>
+            </div>
+          )}
+
+          {signedIn && savedCard && (
+            <div className="saved-methods">
+              <button type="button" className="selected">
                 <span className="payment-brand brand-card">
                   {schemeLabel(savedCard.cardScheme).slice(0, 4).toUpperCase()}
                 </span>
@@ -170,72 +125,46 @@ export function PaymentPage() {
                     {schemeLabel(savedCard.cardScheme)} •••• {savedCard.cardLast4 ?? "????"}
                   </strong>
                   <small>
-                    Saved card
+                    Saved for {checkout.merchantName}
                     {savedCard.cardExpiryMonth && savedCard.cardExpiryYear
                       ? ` · expires ${String(savedCard.cardExpiryMonth).padStart(2, "0")}/${String(savedCard.cardExpiryYear).slice(-2)}`
                       : ""}
                   </small>
                 </span>
-                <i>{activeMethod === "saved" && <Check size={12} />}</i>
+                <i><Check size={12} /></i>
               </button>
-              <button
-                type="button"
-                className={`add-method ${activeMethod === "new" ? "selected" : ""}`}
-                onClick={() => setMethod("new")}
-              >
-                Use a different card
-              </button>
+              <Link className="add-method" to={paymentSettingsPath}>
+                Change card in Payment settings
+              </Link>
             </div>
-          </section>
-        )}
-        {activeMethod === "new" && (
-          <section className="checkout-section">
-            <h2 className="flex items-center gap-2"><CreditCard size={18} /> Card details</h2>
-            <Field label="Cardholder name" name="cardHolderName" autoComplete="cc-name" required />
-            <Field label="Card number" name="cardNumber" inputMode="numeric" autoComplete="cc-number" placeholder="4242 4242 4242 4242" required />
-            <div className="grid grid-cols-3 gap-2">
-              <Field label="MM" name="expiryMonth" inputMode="numeric" autoComplete="cc-exp-month" placeholder="12" required />
-              <Field label="YYYY" name="expiryYear" inputMode="numeric" autoComplete="cc-exp-year" placeholder="2028" required />
-              <Field label="CVC" name="cvc" inputMode="numeric" autoComplete="cc-csc" placeholder="123" required />
-            </div>
-            {checkout.canSaveCard ? (
-              <label className="save-card-toggle">
-                <input
-                  type="checkbox"
-                  checked={saveCard}
-                  onChange={(event) => setSaveCard(event.target.checked)}
-                />
-                Save this card to my account for this store
-                {savedCard ? " (replaces your saved card)" : ""}
-              </label>
-            ) : !signedIn ? (
-              <p className="text-xs text-muted">
-                <Link
-                  to="/account/login"
-                  state={{ from: location.pathname }}
-                  className="font-semibold text-primary"
-                >
-                  Sign in
-                </Link>{" "}
-                to save this card for faster checkout next time.
+          )}
+
+          {signedIn && !savedCard && (
+            <div className="settings-card">
+              <p className="text-sm text-muted">
+                No saved card for {checkout.merchantName} yet. Add one in Payment settings,
+                then come back to complete this order.
               </p>
-            ) : null}
-          </section>
-        )}
+              <Link className="button button-primary" to={paymentSettingsPath}>
+                Add card in Payment settings
+              </Link>
+            </div>
+          )}
+        </section>
+
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
-        <div className="checkout-trust"><LockKeyhole size={14} /> Card details are tokenised securely by Pinch</div>
-        <Button
-          type="submit"
-          disabled={(activeMethod === "new" && !scriptReady) || charge.isPending}
-        >
+        <div className="checkout-trust">
+          <LockKeyhole size={14} /> Paying with your vaulted card — no card details on this page
+        </div>
+        <Button type="submit" disabled={!signedIn || !savedCard || charge.isPending}>
           <ShieldCheck size={18} />{" "}
           {charge.isPending
             ? "Processing payment…"
-            : activeMethod === "saved"
-              ? "Pay with saved card"
-              : scriptReady
-                ? "Pay securely"
-                : "Loading secure fields…"}
+            : !signedIn
+              ? "Sign in to pay"
+              : !savedCard
+                ? "Add a card to pay"
+                : "Pay with saved card"}
         </Button>
       </form>
     </div>
