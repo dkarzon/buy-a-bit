@@ -1,9 +1,10 @@
 import { Check, CreditCard, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { Brand, Button, Field, Money } from "../components/ui";
+import { authClient } from "../lib/auth-client";
 import { apiErrorMessage } from "../lib/api-data";
 import type { PaymentCheckoutContext } from "../lib/api-data";
 import { trpc } from "../lib/trpc";
@@ -27,22 +28,24 @@ declare global {
   }
 }
 
-/**
- * Custom payment page — CaptureJS tokenises the card in-browser, then
- * payment.charge sends only creditCardToken to the API (no Payment Links).
- */
 function schemeLabel(scheme: string | null) {
   if (!scheme) return "Card";
   return scheme.charAt(0).toUpperCase() + scheme.slice(1);
 }
 
+/**
+ * Custom payment page — CaptureJS tokenises a new card in-browser, or charges
+ * the signed-in customer's saved card via payment.charge (useSavedCard).
+ */
 export function PaymentPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { data: session } = authClient.useSession();
   const [scriptReady, setScriptReady] = useState(Boolean(window.Pinch));
   const [error, setError] = useState<string | null>(null);
   const [method, setMethod] = useState<"saved" | "new" | null>(null);
-  const [saveCard, setSaveCard] = useState(false);
+  const [saveCard, setSaveCard] = useState(true);
   const checkoutQuery = trpc.payment.getCheckoutContext.useQuery(
     { orderId: orderId ?? "" },
     { enabled: Boolean(orderId), retry: false },
@@ -50,8 +53,8 @@ export function PaymentPage() {
   const charge = trpc.payment.charge.useMutation();
   const checkout = checkoutQuery.data as PaymentCheckoutContext | undefined;
   const savedCard = checkout?.savedCard ?? null;
-  // Saved card is the default when one exists; user can switch to a new card
   const activeMethod = method ?? (savedCard ? "saved" : "new");
+  const signedIn = Boolean(session?.user);
 
   useEffect(() => {
     if (window.Pinch) {
@@ -82,8 +85,8 @@ export function PaymentPage() {
       setError("Payment is not ready. Please try again.");
       return;
     }
-    setError(null);
 
+    setError(null);
     try {
       if (activeMethod === "saved") {
         const result = (await charge.mutateAsync({
@@ -195,17 +198,28 @@ export function PaymentPage() {
               <Field label="YYYY" name="expiryYear" inputMode="numeric" autoComplete="cc-exp-year" placeholder="2028" required />
               <Field label="CVC" name="cvc" inputMode="numeric" autoComplete="cc-csc" placeholder="123" required />
             </div>
-            {checkout.canSaveCard && (
+            {checkout.canSaveCard ? (
               <label className="save-card-toggle">
                 <input
                   type="checkbox"
                   checked={saveCard}
                   onChange={(event) => setSaveCard(event.target.checked)}
                 />
-                Save this card for next time at this store
+                Save this card to my account for this store
                 {savedCard ? " (replaces your saved card)" : ""}
               </label>
-            )}
+            ) : !signedIn ? (
+              <p className="text-xs text-muted">
+                <Link
+                  to="/account/login"
+                  state={{ from: location.pathname }}
+                  className="font-semibold text-primary"
+                >
+                  Sign in
+                </Link>{" "}
+                to save this card for faster checkout next time.
+              </p>
+            ) : null}
           </section>
         )}
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
@@ -218,7 +232,7 @@ export function PaymentPage() {
           {charge.isPending
             ? "Processing payment…"
             : activeMethod === "saved"
-              ? `Pay with saved card`
+              ? "Pay with saved card"
               : scriptReady
                 ? "Pay securely"
                 : "Loading secure fields…"}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { orderStatusSchema } from "./schemas.js";
+import { orderStatusSchema, productImageUrlSchema } from "./schemas.js";
 
 // ─── merchant ───────────────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ export const productCreateInput = z.object({
   name: z.string().min(1).max(120),
   priceCents: z.number().int().positive(),
   description: z.string().max(2000).optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: productImageUrlSchema.optional(),
   stockCount: z.number().int().nonnegative().optional(),
 });
 
@@ -58,7 +58,7 @@ export const productUpdateInput = z.object({
   name: z.string().min(1).max(120).optional(),
   priceCents: z.number().int().positive().optional(),
   description: z.string().max(2000).nullable().optional(),
-  imageUrl: z.string().url().nullable().optional(),
+  imageUrl: productImageUrlSchema.nullable().optional(),
   stockCount: z.number().int().nonnegative().nullable().optional(),
   isAvailable: z.boolean().optional(),
 });

@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { MerchantShell } from "../components/MerchantShell";
+import { ProductImageField } from "../components/ProductImageField";
 import { Button, Field, FormAlert } from "../components/ui";
 import {
   apiErrorMessage,
@@ -169,13 +170,11 @@ export function ProductNewPage() {
                   setFieldErrors((current) => ({ ...current, stockCount: undefined }))
                 }
               />
-              <Field
-                label="Image URL"
-                name="imageUrl"
-                type="url"
-                placeholder="https://…"
+              <ProductImageField
                 error={fieldErrors.imageUrl}
-                onChange={() => setFieldErrors((current) => ({ ...current, imageUrl: undefined }))}
+                onChange={() =>
+                  setFieldErrors((current) => ({ ...current, imageUrl: undefined }))
+                }
               />
               <label className="grid gap-1.5 text-sm font-medium text-ink">
                 Description
