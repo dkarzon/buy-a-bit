@@ -12,7 +12,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { authClient } from "../lib/auth-client";
 import { initials } from "../lib/api-data";
@@ -39,6 +39,7 @@ export function MerchantShell({
   action?: ReactNode;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const merchantQuery = trpc.merchant.me.useQuery();
   const account = merchantQuery.data;
 
@@ -53,7 +54,16 @@ export function MerchantShell({
         <Brand />
         <nav className="sidebar-nav" aria-label="Merchant navigation">
           {navItems.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path} end className={({ isActive }) => (isActive ? "active" : "")}>
+            <NavLink
+              key={path}
+              to={path}
+              end
+              className={({ isActive }) =>
+                isActive || (path === "/inventory" && location.pathname.startsWith("/products"))
+                  ? "active"
+                  : ""
+              }
+            >
               <Icon size={17} />
               {label}
             </NavLink>
@@ -92,7 +102,16 @@ export function MerchantShell({
 
         <nav className="merchant-mobile-nav" aria-label="Merchant mobile navigation">
           {navItems.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path} end className={({ isActive }) => (isActive ? "active" : "")}>
+            <NavLink
+              key={path}
+              to={path}
+              end
+              className={({ isActive }) =>
+                isActive || (path === "/inventory" && location.pathname.startsWith("/products"))
+                  ? "active"
+                  : ""
+              }
+            >
               <Icon size={17} />
               <span>{label}</span>
             </NavLink>
