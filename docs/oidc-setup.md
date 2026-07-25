@@ -37,6 +37,22 @@ Could not assume role with OIDC: The web identity token provided could not be va
 
 That message is **token validation** (provider URL / audience / thumbprint), not a `sub` mismatch. `sub` mismatches usually say **AccessDenied** / **Not authorized to perform sts:AssumeRoleWithWebIdentity**.
 
+### Critical: immutable `sub` claims (repos created on/after 2026-07-15)
+
+GitHub now includes numeric owner/repo IDs in the OIDC subject for new repositories, for example:
+
+```text
+repo:YOUR_ORG@12345678/YOUR_REPO@87654321:ref:refs/heads/main
+```
+
+A trust policy that only allows the legacy form `repo:YOUR_ORG/YOUR_REPO:…` will fail with **Not authorized to perform sts:AssumeRoleWithWebIdentity**. Your deploy workflow is fine — update the IAM role trust policy (or redeploy `docs/github-oidc-role.yaml`) so `sub` allows both formats.
+
+Check this repo’s prefix:
+
+```bash
+gh api repos/OWNER/REPO/actions/oidc/customization/sub
+```
+
 ### Option A — Console
 
 1. **IAM → Identity providers → Add provider → OpenID Connect**
@@ -127,7 +143,9 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/*
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/*
+                  - !Sub repo:${GitHubOrg}@*/${GitHubRepo}@*:ref:refs/heads/*
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AdministratorAccess
 
@@ -145,7 +163,7 @@ Outputs:
 
 ### Example trust policy
 
-Replace `ACCOUNT_ID`, `YOUR_ORG`, and `YOUR_REPO`. `StringLike` on `sub` covers **push**, **workflow_dispatch**, and ScaleBop **repository_dispatch** (`scalebop-deploy`) on any branch ref:
+Replace `ACCOUNT_ID`, `YOUR_ORG`, and `YOUR_REPO`. `StringLike` on `sub` covers **push**, **workflow_dispatch**, and ScaleBop **repository_dispatch** (`scalebop-deploy`) on any branch ref, plus both legacy and immutable (post–2026-07-15) subject formats:
 
 ```json
 {
@@ -162,7 +180,10 @@ Replace `ACCOUNT_ID`, `YOUR_ORG`, and `YOUR_REPO`. `StringLike` on `sub` covers 
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/YOUR_REPO:ref:refs/heads/*"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:YOUR_ORG/YOUR_REPO:ref:refs/heads/*",
+            "repo:YOUR_ORG@*/YOUR_REPO@*:ref:refs/heads/*"
+          ]
         }
       }
     }
@@ -170,14 +191,16 @@ Replace `ACCOUNT_ID`, `YOUR_ORG`, and `YOUR_REPO`. `StringLike` on `sub` covers 
 }
 ```
 
-To allow only `main`, change the `sub` value to `repo:YOUR_ORG/YOUR_REPO:ref:refs/heads/main`.
+For this repository specifically, the emitted prefix is `repo:dkarzon@214449/buy-a-bit@1311512368`, so the second pattern must be present (or use that exact prefix).
+
+To allow only `main`, change each `sub` value’s trailing segment to `ref:refs/heads/main`.
 
 ## If assumption still fails
 
 | Error text | Likely cause | Fix |
 |------------|--------------|-----|
 | **web identity token provided could not be validated** | Wrong/missing OIDC provider audience, bad provider URL, or stale thumbprint | Provider URL `https://token.actions.githubusercontent.com`; Client ID list includes `sts.amazonaws.com`; recreate provider if needed |
-| **AccessDenied** / **Not authorized** … **AssumeRoleWithWebIdentity** | Trust `sub` does not match this run | Align `sub` with org/repo/branch; use `StringLike` `…:ref:refs/heads/*` for dispatch triggers |
+| **AccessDenied** / **Not authorized** … **AssumeRoleWithWebIdentity** | Trust `sub` does not match this run (wrong org/repo/branch, or missing immutable `@id` form for new repos) | Align `sub` with org/repo/branch; allow both `repo:ORG/REPO:…` and `repo:ORG@*/REPO@*:…`; use `StringLike` `…:ref:refs/heads/*` for dispatch triggers |
 | Missing OIDC token / credential step cannot mint token | Workflow lacks `id-token: write` | Keep the generated `permissions` block |
 
 Also confirm `AWS_DEPLOY_ROLE_ARN` is this **GitHub OIDC** role (not a ScaleBop cross-account or unrelated role).
