@@ -41,11 +41,8 @@ export function DashboardPage() {
               <h1>Hello, {merchant?.user.name ?? "Merchant"}!</h1>
               <p className="mt-1 text-sm text-muted">Here’s what’s happening with your store today.</p>
             </div>
-            <Link
-              to={products[0] ? `/p/${products[0].slug}` : "/products/new"}
-              className="button button-secondary"
-            >
-              <QrCode size={17} /> Preview store QR
+            <Link to="/inventory/qr" className="button button-secondary">
+              <QrCode size={17} /> View all QR codes
             </Link>
           </section>
 

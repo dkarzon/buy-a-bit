@@ -1,7 +1,9 @@
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   BarChart3,
   Bell,
+  ChevronDown,
   CircleHelp,
   CreditCard,
   LayoutDashboard,
@@ -42,10 +44,47 @@ export function MerchantShell({
   const location = useLocation();
   const merchantQuery = trpc.merchant.me.useQuery();
   const account = merchantQuery.data;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const displayName = account?.user.name ?? account?.user.email ?? "Merchant";
+  const displayEmail = account?.user.email ?? "";
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
 
   async function signOut() {
-    await authClient.signOut();
-    navigate("/login");
+    setSigningOut(true);
+    try {
+      await authClient.signOut();
+      navigate("/login");
+    } finally {
+      setSigningOut(false);
+      setMenuOpen(false);
+    }
   }
 
   return (
@@ -74,8 +113,8 @@ export function MerchantShell({
         </nav>
         <div className="mt-auto grid gap-2">
           <a href="mailto:support@buy-a-bit.com" className="sidebar-link"><CircleHelp size={17} /> Help</a>
-          <button type="button" className="sidebar-upgrade" onClick={() => void signOut()}>
-            <LogOut size={16} /> Sign out
+          <button type="button" className="sidebar-upgrade" onClick={() => void signOut()} disabled={signingOut}>
+            <LogOut size={16} /> {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
       </aside>
@@ -97,9 +136,45 @@ export function MerchantShell({
             )}
             <button className="icon-button" aria-label="Notifications"><Bell size={17} /></button>
             <Link className="icon-button" aria-label="Payment settings" to="/settings/payment"><Settings size={17} /></Link>
-            <button className="avatar" aria-label="Account menu">
-              {initials(account?.user.name ?? account?.user.email ?? "Merchant")}
-            </button>
+            <div className="account-menu" ref={menuRef}>
+              <button
+                type="button"
+                className="account-menu-trigger"
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-controls={menuId}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                <span className="avatar">{initials(displayName)}</span>
+                <ChevronDown size={14} className={menuOpen ? "account-chevron open" : "account-chevron"} />
+              </button>
+              {menuOpen && (
+                <div className="account-dropdown" id={menuId} role="menu">
+                  <div className="account-dropdown-header">
+                    <strong>{displayName}</strong>
+                    {displayEmail && <span>{displayEmail}</span>}
+                  </div>
+                  <Link
+                    role="menuitem"
+                    to="/settings/payment"
+                    className="account-dropdown-item"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Settings size={15} /> Payment settings
+                  </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="account-dropdown-item account-dropdown-danger"
+                    onClick={() => void signOut()}
+                    disabled={signingOut}
+                  >
+                    <LogOut size={15} /> {signingOut ? "Signing out…" : "Log out"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
