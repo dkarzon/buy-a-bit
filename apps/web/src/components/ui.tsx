@@ -37,17 +37,70 @@ export function Button({ children, className = "", variant = "primary", ...props
 type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
   hint?: ReactNode;
+  error?: string;
 };
 
-export function Field({ label, hint, className = "", ...props }: FieldProps) {
+export function Field({ label, hint, error, className = "", id, ...props }: FieldProps) {
+  const fieldId = id ?? props.name;
+  const errorId = error && fieldId ? `${fieldId}-error` : undefined;
+
   return (
     <label className="grid gap-1.5 text-sm font-medium text-ink">
       <span className="flex items-center justify-between gap-3">
         {label}
         {hint}
       </span>
-      <input className={`field ${className}`} {...props} />
+      <input
+        id={fieldId}
+        className={`field ${error ? "field-invalid" : ""} ${className}`}
+        aria-invalid={Boolean(error)}
+        aria-describedby={errorId}
+        {...props}
+      />
+      {error && (
+        <span id={errorId} className="field-error" role="alert">
+          {error}
+        </span>
+      )}
     </label>
+  );
+}
+
+export function FormAlert({
+  tone = "error",
+  title,
+  children,
+}: {
+  tone?: "error" | "success" | "info";
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`form-alert form-alert-${tone}`} role={tone === "error" ? "alert" : "status"}>
+      {title && <strong>{title}</strong>}
+      <p>{children}</p>
+    </div>
+  );
+}
+
+export function StatePanel({
+  icon,
+  title,
+  children,
+  actions,
+}: {
+  icon?: ReactNode;
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="empty-state product-state-panel">
+      {icon}
+      <strong>{title}</strong>
+      <span>{children}</span>
+      {actions && <div className="product-state-actions">{actions}</div>}
+    </div>
   );
 }
 
