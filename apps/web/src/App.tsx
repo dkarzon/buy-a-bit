@@ -1,6 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import { CustomerRoute } from "./components/CustomerRoute";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AccountLoginPage } from "./pages/AccountLoginPage";
+import { AccountOrdersPage } from "./pages/AccountOrdersPage";
+import { AccountPaymentMethodsPage } from "./pages/AccountPaymentMethodsPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
 import { CustomersPage } from "./pages/CustomersPage";
@@ -28,6 +32,12 @@ export function App() {
         <Route path="/pay/:orderId" element={<PaymentPage />} />
         <Route path="/checkout/:slug" element={<CheckoutPage />} />
         <Route path="/payment/complete" element={<PaymentCompletePage />} />
+
+        <Route path="/account/login" element={<AccountLoginPage />} />
+        <Route element={<CustomerRoute />}>
+          <Route path="/account" element={<AccountOrdersPage />} />
+          <Route path="/account/payment-methods" element={<AccountPaymentMethodsPage />} />
+        </Route>
 
         <Route element={<ProtectedRoute />}>
           <Route path="/onboarding" element={<OnboardingPage />} />

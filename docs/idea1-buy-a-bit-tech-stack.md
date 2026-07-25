@@ -446,7 +446,7 @@ order_items
 
 ## Auth — Better Auth
 
-Better Auth handles merchant sessions and cookies. Merchants authenticate with email/password; customers remain anonymous on landing pages. Pinch does **not** offer OAuth/social login for end users (or merchants) — only OAuth2 **client credentials** for API Application auth (see Pinch service layer).
+Better Auth handles all sessions and cookies with a single `user` table. Merchants authenticate with email/password and are identified by a linked `merchants` row; customers may sign in with the same mechanism (no `merchants` row needed) for order history and saved cards, or stay anonymous on landing pages. Pinch does **not** offer OAuth/social login for end users (or merchants) — only OAuth2 **client credentials** for API Application auth (see Pinch service layer).
 
 ### Server config
 
@@ -528,7 +528,16 @@ export const createContext = async (opts: { hono: Context }) => {
 
 ### Customer auth
 
-No Better Auth account and **no Pinch OAuth/login** (Pinch does not provide end-user login). Landing page collects name/email/phone; stored on the `orders` row at checkout creation.
+Optional — guest checkout stays the default. The checkout form collects name/email; both are snapshotted on the `orders` row regardless of sign-in state. There is **no Pinch OAuth/login** (Pinch does not provide end-user login).
+
+Signed-in customers (same Better Auth `user` table, `/account/login`) additionally get:
+
+- `orders.userId` set on orders created or paid while signed in (a signed-in payment claims a guest order for that user).
+- Order history across merchants via `account.listOrders` (`/account`).
+- One saved card per merchant: `customer_payers` holds a Pinch payer per `(userId, merchantId)` plus one vaulted payment source (`POST /payers/{id}/sources`) and display metadata (scheme/last4/expiry). Charging the saved card is a realtime payment **without** a token — Pinch uses the payer's stored source. Saving a new card deletes the old source first, so a payer never holds two.
+- Saved-card charges and card-saving require the session user to own (or claim) the order — the order id alone only authorises a fresh-token charge.
+
+The web routes are `/account` (orders), `/account/payment-methods`, guarded by `CustomerRoute` (session only, no merchant requirement).
 
 ---
 

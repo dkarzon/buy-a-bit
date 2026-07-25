@@ -403,6 +403,14 @@ h1, h2, h3, p { margin: 0; }
 .mobile-nav a.active { color: var(--primary); background: var(--primary-soft); }
 .save-toast { position: fixed; bottom: 82px; left: 50%; z-index: 30; display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-radius: 999px; color: white; background: var(--ink); font-size: 11px; transform: translateX(-50%); box-shadow: 0 8px 30px #0003; }
 
+/* Customer account */
+.account-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 8px; background: var(--surface-container); }
+.account-tabs a { height: 34px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.account-tabs a.active { color: var(--primary); background: white; box-shadow: 0 1px 3px #191c1e18; }
+.auth-switch a { color: var(--primary); font-weight: 600; }
+.save-card-toggle { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.save-card-toggle input { width: 16px; height: 16px; accent-color: var(--primary-bright); }
+
 /* Completion */
 .complete-page { min-height: 100vh; display: grid; place-items: center; padding: 100px 20px 40px; background: var(--surface); }
 .complete-page > header { position: absolute; inset: 24px auto auto 28px; }

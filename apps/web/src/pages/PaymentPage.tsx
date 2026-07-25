@@ -1,4 +1,4 @@
-import { CreditCard, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Check, CreditCard, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -31,17 +31,27 @@ declare global {
  * Custom payment page — CaptureJS tokenises the card in-browser, then
  * payment.charge sends only creditCardToken to the API (no Payment Links).
  */
+function schemeLabel(scheme: string | null) {
+  if (!scheme) return "Card";
+  return scheme.charAt(0).toUpperCase() + scheme.slice(1);
+}
+
 export function PaymentPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const [scriptReady, setScriptReady] = useState(Boolean(window.Pinch));
   const [error, setError] = useState<string | null>(null);
+  const [method, setMethod] = useState<"saved" | "new" | null>(null);
+  const [saveCard, setSaveCard] = useState(false);
   const checkoutQuery = trpc.payment.getCheckoutContext.useQuery(
     { orderId: orderId ?? "" },
     { enabled: Boolean(orderId), retry: false },
   );
   const charge = trpc.payment.charge.useMutation();
   const checkout = checkoutQuery.data as PaymentCheckoutContext | undefined;
+  const savedCard = checkout?.savedCard ?? null;
+  // Saved card is the default when one exists; user can switch to a new card
+  const activeMethod = method ?? (savedCard ? "saved" : "new");
 
   useEffect(() => {
     if (window.Pinch) {
@@ -68,13 +78,27 @@ export function PaymentPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!checkout || !orderId || !window.Pinch) {
-      setError("Secure card tokenisation is not ready. Please try again.");
+    if (!checkout || !orderId) {
+      setError("Payment is not ready. Please try again.");
       return;
     }
     setError(null);
-    const form = new FormData(event.currentTarget);
+
     try {
+      if (activeMethod === "saved") {
+        const result = (await charge.mutateAsync({
+          orderId,
+          useSavedCard: true,
+        })) as { confirmationPath: string };
+        navigate(result.confirmationPath);
+        return;
+      }
+
+      if (!window.Pinch) {
+        setError("Secure card tokenisation is not ready. Please try again.");
+        return;
+      }
+      const form = new FormData(event.currentTarget);
       const capture = window.Pinch.Capture({ publishableKey: checkout.publishableKey });
       const { token } = await capture.createToken({
         sourceType: "credit-card",
@@ -87,6 +111,7 @@ export function PaymentPage() {
       const result = (await charge.mutateAsync({
         orderId,
         creditCardToken: token,
+        saveCard: checkout.canSaveCard && saveCard,
       })) as { confirmationPath: string };
       navigate(result.confirmationPath);
     } catch (caught) {
@@ -125,20 +150,78 @@ export function PaymentPage() {
             <strong><Money cents={checkout.totalCents} /></strong>
           </div>
         </section>
-        <section className="checkout-section">
-          <h2 className="flex items-center gap-2"><CreditCard size={18} /> Card details</h2>
-          <Field label="Cardholder name" name="cardHolderName" autoComplete="cc-name" required />
-          <Field label="Card number" name="cardNumber" inputMode="numeric" autoComplete="cc-number" placeholder="4242 4242 4242 4242" required />
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="MM" name="expiryMonth" inputMode="numeric" autoComplete="cc-exp-month" placeholder="12" required />
-            <Field label="YYYY" name="expiryYear" inputMode="numeric" autoComplete="cc-exp-year" placeholder="2028" required />
-            <Field label="CVC" name="cvc" inputMode="numeric" autoComplete="cc-csc" placeholder="123" required />
-          </div>
-        </section>
+        {savedCard && (
+          <section className="checkout-section">
+            <h2>Pay with</h2>
+            <div className="saved-methods">
+              <button
+                type="button"
+                className={activeMethod === "saved" ? "selected" : ""}
+                onClick={() => setMethod("saved")}
+              >
+                <span className="payment-brand brand-card">
+                  {schemeLabel(savedCard.cardScheme).slice(0, 4).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 text-left">
+                  <strong>
+                    {schemeLabel(savedCard.cardScheme)} •••• {savedCard.cardLast4 ?? "????"}
+                  </strong>
+                  <small>
+                    Saved card
+                    {savedCard.cardExpiryMonth && savedCard.cardExpiryYear
+                      ? ` · expires ${String(savedCard.cardExpiryMonth).padStart(2, "0")}/${String(savedCard.cardExpiryYear).slice(-2)}`
+                      : ""}
+                  </small>
+                </span>
+                <i>{activeMethod === "saved" && <Check size={12} />}</i>
+              </button>
+              <button
+                type="button"
+                className={`add-method ${activeMethod === "new" ? "selected" : ""}`}
+                onClick={() => setMethod("new")}
+              >
+                Use a different card
+              </button>
+            </div>
+          </section>
+        )}
+        {activeMethod === "new" && (
+          <section className="checkout-section">
+            <h2 className="flex items-center gap-2"><CreditCard size={18} /> Card details</h2>
+            <Field label="Cardholder name" name="cardHolderName" autoComplete="cc-name" required />
+            <Field label="Card number" name="cardNumber" inputMode="numeric" autoComplete="cc-number" placeholder="4242 4242 4242 4242" required />
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="MM" name="expiryMonth" inputMode="numeric" autoComplete="cc-exp-month" placeholder="12" required />
+              <Field label="YYYY" name="expiryYear" inputMode="numeric" autoComplete="cc-exp-year" placeholder="2028" required />
+              <Field label="CVC" name="cvc" inputMode="numeric" autoComplete="cc-csc" placeholder="123" required />
+            </div>
+            {checkout.canSaveCard && (
+              <label className="save-card-toggle">
+                <input
+                  type="checkbox"
+                  checked={saveCard}
+                  onChange={(event) => setSaveCard(event.target.checked)}
+                />
+                Save this card for next time at this store
+                {savedCard ? " (replaces your saved card)" : ""}
+              </label>
+            )}
+          </section>
+        )}
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
         <div className="checkout-trust"><LockKeyhole size={14} /> Card details are tokenised securely by Pinch</div>
-        <Button type="submit" disabled={!scriptReady || charge.isPending}>
-          <ShieldCheck size={18} /> {charge.isPending ? "Processing payment…" : scriptReady ? "Pay securely" : "Loading secure fields…"}
+        <Button
+          type="submit"
+          disabled={(activeMethod === "new" && !scriptReady) || charge.isPending}
+        >
+          <ShieldCheck size={18} />{" "}
+          {charge.isPending
+            ? "Processing payment…"
+            : activeMethod === "saved"
+              ? `Pay with saved card`
+              : scriptReady
+                ? "Pay securely"
+                : "Loading secure fields…"}
         </Button>
       </form>
     </div>

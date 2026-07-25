@@ -11,7 +11,7 @@ import {
   mergeOrderLineRefs,
   summarizeOrderItems,
 } from "../../services/orders.js";
-import { protectedProcedure, publicProcedure, router } from "../trpc.js";
+import { merchantProcedure, publicProcedure, router } from "../trpc.js";
 
 export const orderRouter = router({
   create: publicProcedure
@@ -113,6 +113,8 @@ export const orderRouter = router({
           .insert(orders)
           .values({
             merchantId,
+            // Signed-in customers get the order on their account; guests stay null
+            userId: ctx.user?.id ?? null,
             customerName: input.customerName,
             customerEmail: input.customerEmail,
             customerPhone: input.customerPhone ?? null,
@@ -190,13 +192,9 @@ export const orderRouter = router({
       return { ...order, items };
     }),
 
-  listForMerchant: protectedProcedure
+  listForMerchant: merchantProcedure
     .input(orderListForMerchantInput)
     .query(async ({ ctx, input }) => {
-      if (!ctx.merchant) {
-        return [];
-      }
-
       const status = input?.status;
       const limit = input?.limit ?? 50;
 

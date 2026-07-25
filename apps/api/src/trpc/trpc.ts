@@ -21,8 +21,9 @@ export const publicProcedure = t.procedure;
 
 /**
  * Requires a Better Auth session.
- * Merchant may be null (e.g. post-signup before onboarding) — callers that need a
- * linked merchant should check `ctx.merchant` and throw FORBIDDEN if missing.
+ * Any signed-in user is a customer; being a merchant additionally requires a
+ * `merchants` row (use `merchantProcedure`). Merchant may be null here
+ * (e.g. post-signup before onboarding, or customer-only accounts).
  */
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session || !ctx.user) {
@@ -37,6 +38,31 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
       ...ctx,
       session: ctx.session,
       user: ctx.user,
+    },
+  });
+});
+
+/** Requires a session AND a linked merchant — merchant dashboard procedures. */
+export const merchantProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session || !ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Sign in required",
+    });
+  }
+  if (!ctx.merchant) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Complete store onboarding first",
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
+      user: ctx.user,
+      merchant: ctx.merchant,
     },
   });
 });

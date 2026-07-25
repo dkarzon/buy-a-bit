@@ -172,6 +172,15 @@ export const paymentOrderLineOutput = z.object({
   lineTotalCents: z.number().int().positive(),
 });
 
+/** Saved-card display metadata — Pinch references only, never card data */
+export const savedCardSummary = z.object({
+  cardScheme: z.string().nullable(),
+  cardLast4: z.string().nullable(),
+  cardExpiryMonth: z.number().int().nullable(),
+  cardExpiryYear: z.number().int().nullable(),
+  cardHolderName: z.string().nullable(),
+});
+
 export const paymentGetCheckoutContextOutput = z.object({
   orderId: z.string().uuid(),
   /** Summary label for single-line UI */
@@ -181,12 +190,25 @@ export const paymentGetCheckoutContextOutput = z.object({
   items: z.array(paymentOrderLineOutput).min(1),
   publishableKey: z.string().min(1),
   status: orderStatusSchema,
+  /** Signed-in customer's stored card for this merchant, if any */
+  savedCard: savedCardSummary.nullable(),
+  /** True when the session customer may save a card on this order */
+  canSaveCard: z.boolean(),
 });
 
-export const paymentChargeInput = z.object({
-  orderId: z.string().uuid(),
-  creditCardToken: z.string().min(1),
-});
+export const paymentChargeInput = z
+  .object({
+    orderId: z.string().uuid(),
+    /** Fresh CaptureJS token — required unless paying with the saved card */
+    creditCardToken: z.string().min(1).optional(),
+    /** Vault this card for next time (signed-in customers only) */
+    saveCard: z.boolean().optional().default(false),
+    /** Charge the signed-in customer's stored card for this merchant */
+    useSavedCard: z.boolean().optional().default(false),
+  })
+  .refine((value) => Boolean(value.creditCardToken) !== value.useSavedCard, {
+    message: "Provide creditCardToken or useSavedCard, not both",
+  });
 
 export const paymentChargeOutput = z.object({
   orderId: z.string().uuid(),
@@ -206,4 +228,41 @@ export const paymentGetStatusOutput = z.object({
   customerName: z.string(),
   totalCents: z.number().int().positive(),
   items: z.array(paymentOrderLineOutput).min(1),
+});
+
+// ─── account (signed-in customer) ───────────────────────────────────────────
+
+export const accountListOrdersInput = z
+  .object({
+    limit: z.number().int().min(1).max(100).default(50),
+  })
+  .optional();
+
+export const accountOrderListItem = z.object({
+  id: z.string().uuid(),
+  /** Display summary, e.g. "Widget" or "Widget + 2 more" */
+  productName: z.string(),
+  itemCount: z.number().int().positive(),
+  merchantName: z.string(),
+  status: orderStatusSchema,
+  totalCents: z.number().int().positive(),
+  createdAt: z.coerce.date(),
+  paidAt: z.coerce.date().nullable(),
+});
+
+export const accountPaymentMethodOutput = z.object({
+  /** customer_payers row id */
+  id: z.string().uuid(),
+  merchantId: z.string().uuid(),
+  merchantName: z.string(),
+  cardScheme: z.string().nullable(),
+  cardLast4: z.string().nullable(),
+  cardExpiryMonth: z.number().int().nullable(),
+  cardExpiryYear: z.number().int().nullable(),
+  cardHolderName: z.string().nullable(),
+  cardSavedAt: z.coerce.date().nullable(),
+});
+
+export const accountDeletePaymentMethodInput = z.object({
+  id: z.string().uuid(),
 });

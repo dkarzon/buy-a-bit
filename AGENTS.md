@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo. Humans: see [README.md](./RE
 
 ## What this is
 
-**buy-a-bit** — Pinch Hackathon app: NFC/QR → product landing → custom CaptureJS payment page → realtime charge → confirmation. Merchants manage products; customers stay anonymous.
+**buy-a-bit** — Pinch Hackathon app: NFC/QR → product landing → custom CaptureJS payment page → realtime charge → confirmation. Merchants manage products; customers check out as guests or optionally sign in for order history and one saved card per merchant.
 
 pnpm monorepo, Node ≥ 20:
 
@@ -89,8 +89,10 @@ packages/shared/    contract of record for procedure I/O
 
 **Auth**
 
-- Merchants only; Better Auth sessions + `merchants.userId`.
-- `protectedProcedure` = session + linked merchant. Public: landing, checkout, payment verify.
+- One Better Auth `user` table for both roles: any signed-in user is a customer; a merchant additionally has a `merchants` row (`merchants.userId`).
+- `protectedProcedure` = session only (customer-grade); `merchantProcedure` = session + linked merchant. Public: landing, checkout, payment verify.
+- Customer sign-in is `/account/login`; merchant sign-in stays `/login`. Guest checkout must keep working — `orders.userId` is nullable.
+- Stored cards: `customer_payers` keys a Pinch payer by `(userId, merchantId)`; one vaulted source per row. Saved-card charges (`useSavedCard`) require the session user to own the order — an order id alone must never charge a card on file.
 - Import auth hooks from `better-auth/react`, not `better-auth/client`.
 
 ## Conventions

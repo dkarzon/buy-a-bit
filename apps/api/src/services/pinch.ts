@@ -27,11 +27,28 @@ export type CreatePayerResult = {
 export type CreateRealtimePaymentInput = {
   payerId: string;
   amountCents: number;
-  creditCardToken: string;
+  /** Omit to charge the payer's vaulted payment source (card on file) */
+  creditCardToken?: string;
   description?: string;
   metadata?: Record<string, string>;
   /** Replay protection — same nonce returns the existing payment */
   nonce?: string;
+};
+
+export type CreatePaymentSourceInput = {
+  payerId: string;
+  /** CaptureJS token — vaulted as a reusable source on the payer */
+  creditCardToken: string;
+};
+
+export type PaymentSourceResult = {
+  id: string;
+  cardScheme: string | null;
+  /** Last 4 digits, e.g. "1111" */
+  displayCardNumber: string | null;
+  cardHolderName: string | null;
+  /** ISO date, e.g. "2030-12-01T00:00:00" */
+  expiryDate: string | null;
 };
 
 export type PinchPaymentStatus =
@@ -57,6 +74,10 @@ export type PinchClient = {
     input: CreateRealtimePaymentInput,
   ) => Promise<CreateRealtimePaymentResult>;
   getPayment: (paymentId: string) => Promise<CreateRealtimePaymentResult>;
+  createPaymentSource: (
+    input: CreatePaymentSourceInput,
+  ) => Promise<PaymentSourceResult>;
+  deletePaymentSource: (payerId: string, sourceId: string) => Promise<void>;
   createManagedMerchant: (body: unknown) => Promise<unknown>;
 };
 
@@ -241,6 +262,51 @@ function createPinchClient(auth: PinchAuth): PinchClient {
       };
     },
 
+    async createPaymentSource(input) {
+      const res = await pinchFetch(auth, `/payers/${input.payerId}/sources`, {
+        method: "POST",
+        body: JSON.stringify({
+          sourceType: "credit-card",
+          token: input.creditCardToken,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          `Pinch createPaymentSource failed (${res.status}): ${await readPinchError(res)}`,
+        );
+      }
+
+      const json = (await res.json()) as {
+        id: string;
+        cardScheme?: string | null;
+        displayCardNumber?: string | null;
+        cardHolderName?: string | null;
+        expiryDate?: string | null;
+      };
+
+      return {
+        id: json.id,
+        cardScheme: json.cardScheme ?? null,
+        displayCardNumber: json.displayCardNumber ?? null,
+        cardHolderName: json.cardHolderName ?? null,
+        expiryDate: json.expiryDate ?? null,
+      };
+    },
+
+    async deletePaymentSource(payerId, sourceId) {
+      const res = await pinchFetch(auth, `/payers/${payerId}/sources/${sourceId}`, {
+        method: "DELETE",
+      });
+
+      // 404 = already gone at Pinch — treat as deleted
+      if (!res.ok && res.status !== 404) {
+        throw new Error(
+          `Pinch deletePaymentSource failed (${res.status}): ${await readPinchError(res)}`,
+        );
+      }
+    },
+
     async getPayment(paymentId) {
       const res = await pinchFetch(auth, `/payments/${paymentId}`, {
         method: "GET",
@@ -357,6 +423,17 @@ export function orderStatusFromPinchPayment(
     default:
       return "pending";
   }
+}
+
+/** Pinch source expiryDate ("2030-12-01T00:00:00") → month/year for display. */
+export function parsePinchExpiry(expiryDate: string | null): {
+  month: number | null;
+  year: number | null;
+} {
+  if (!expiryDate) return { month: null, year: null };
+  const match = /^(\d{4})-(\d{2})/.exec(expiryDate);
+  if (!match) return { month: null, year: null };
+  return { month: Number(match[2]), year: Number(match[1]) };
 }
 
 /** Split "Jane Smith" → first/last for Pinch payer fields. */

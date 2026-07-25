@@ -31,7 +31,7 @@ Card data never hits Buy-a-bit servers — CaptureJS tokenises in the browser ([
 
 ### **2. Customer Experience**
 - Customer taps NFC tag or scans QR code.
-- No customer account or Pinch OAuth login — customers stay anonymous.
+- Guest checkout by default — no account required. Customers can optionally sign in (Better Auth, same `user` table as merchants) for order history and one saved card per store. No Pinch OAuth login (Pinch has none for end users).
 - They land on your **product landing page**:
   - Product details  
   - Price  
@@ -135,7 +135,7 @@ Current-Merchant: mch_XXXXXXXXXXXXXXXX
 | Publishable key | Managed → platform `PINCH_PUBLISHABLE_KEY`; BYOK → merchant’s stored `pk_…` |
 | Webhooks | Reconcile / confirm order status; verify signature before mutating |
 | Secrets | Server-only Application secrets; BYOK secrets encrypted; never log raw keys |
-| Routing | `payment.charge` picks credentials from the **order’s merchant**, not the session (customers are anonymous) |
+| Routing | `payment.charge` picks credentials from the **order’s merchant**, not the session (guest checkout needs no session; saved-card charges additionally require the session user to own the order) |
 
 ### Hackathon default
 

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { merchants } from "../../db/schema.js";
-import { protectedProcedure, router } from "../trpc.js";
+import { merchantProcedure, protectedProcedure, router } from "../trpc.js";
 
 function toMerchantPayload(merchant: typeof merchants.$inferSelect) {
   return {
@@ -73,16 +73,9 @@ export const merchantRouter = router({
       return toMerchantPayload(created);
     }),
 
-  updateProfile: protectedProcedure
+  updateProfile: merchantProcedure
     .input(merchantUpdateProfileInput)
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.merchant) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Complete store onboarding first",
-        });
-      }
-
       const [updated] = await ctx.db
         .update(merchants)
         .set({ businessName: input.businessName })

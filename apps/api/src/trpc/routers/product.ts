@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 
 import { merchants, products } from "../../db/schema.js";
 import { generateProductQr } from "../../services/qr.js";
-import { protectedProcedure, publicProcedure, router } from "../trpc.js";
+import { merchantProcedure, publicProcedure, router } from "../trpc.js";
 
 function webBaseUrl(): string {
   return (process.env.WEB_URL ?? "http://localhost:5173").replace(/\/$/, "");
@@ -49,11 +49,7 @@ function toProductRecord(product: typeof products.$inferSelect) {
 }
 
 export const productRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    if (!ctx.merchant) {
-      return [];
-    }
-
+  list: merchantProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select()
       .from(products)
@@ -63,16 +59,9 @@ export const productRouter = router({
     return rows.map(toProductRecord);
   }),
 
-  get: protectedProcedure
+  get: merchantProcedure
     .input(productIdInput)
     .query(async ({ ctx, input }) => {
-      if (!ctx.merchant) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Complete store onboarding first",
-        });
-      }
-
       const [product] = await ctx.db
         .select()
         .from(products)
@@ -95,16 +84,9 @@ export const productRouter = router({
       };
     }),
 
-  create: protectedProcedure
+  create: merchantProcedure
     .input(productCreateInput)
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.merchant) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Complete store onboarding first",
-        });
-      }
-
       const slug = createProductSlug(input.name);
       const landingPageUrl = landingPageUrlForSlug(slug);
 
@@ -143,16 +125,9 @@ export const productRouter = router({
       };
     }),
 
-  update: protectedProcedure
+  update: merchantProcedure
     .input(productUpdateInput)
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.merchant) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Complete store onboarding first",
-        });
-      }
-
       const { id, ...fields } = input;
       const patch: Partial<typeof products.$inferInsert> = {};
       if (fields.name !== undefined) patch.name = fields.name;
@@ -187,7 +162,7 @@ export const productRouter = router({
       return toProductRecord(updated);
     }),
 
-  delete: protectedProcedure
+  delete: merchantProcedure
     .input(productIdInput)
     .mutation(async ({ input }) => {
       void input;

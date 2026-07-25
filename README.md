@@ -4,7 +4,7 @@ Pinch Hackathon app — NFC/QR-triggered instant checkout for physical products.
 
 Merchants create a small product catalogue; each product gets a unique landing URL, QR code, and optional NFC tag. Customers tap or scan → enter contact details → pay on Buy-a-bit’s custom payment page (Pinch CaptureJS tokenisation + realtime charge) → confirmation. Aimed at cafés, markets, creators, events, and pop-ups.
 
-Card data never hits Buy-a-bit servers. Merchants connect via **managed** Pinch sub-merchants or **BYOK** (bring your own Application credentials). Customers stay anonymous; only merchants sign in.
+Card data never hits Buy-a-bit servers. Merchants connect via **managed** Pinch sub-merchants or **BYOK** (bring your own Application credentials). Guest checkout is the default; customers can optionally create an account (same Better Auth login) to see order history and save one card per store (vaulted as a Pinch payment source — Buy-a-bit only keeps references).
 
 Deeper product and architecture notes: [docs/idea1-buy-a-bit.md](./docs/idea1-buy-a-bit.md) and [docs/idea1-buy-a-bit-tech-stack.md](./docs/idea1-buy-a-bit-tech-stack.md).
 

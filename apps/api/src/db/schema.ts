@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -157,6 +158,8 @@ export const orders = pgTable("orders", {
   merchantId: uuid("merchant_id")
     .notNull()
     .references(() => merchants.id, { onDelete: "cascade" }),
+  /** Signed-in customer, when known — guest checkout leaves this null */
+  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
   customerName: text("customer_name").notNull(),
   customerEmail: text("customer_email").notNull(),
   customerPhone: text("customer_phone"),
@@ -190,6 +193,42 @@ export const orderItems = pgTable(
   (table) => [index("order_items_order_id_idx").on(table.orderId)],
 );
 
+/**
+ * Per-customer, per-merchant Pinch payer. Pinch payers live inside one
+ * merchant's credential scope, so a stored card is inherently per-merchant.
+ * At most one saved card per row (replace = delete old source, vault new).
+ * Only Pinch references + display metadata are stored — never card data.
+ */
+export const customerPayers = pgTable(
+  "customer_payers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchants.id, { onDelete: "cascade" }),
+    pinchPayerId: text("pinch_payer_id").notNull(),
+    pinchSourceId: text("pinch_source_id"),
+    cardScheme: text("card_scheme"),
+    cardLast4: text("card_last4"),
+    cardExpiryMonth: integer("card_expiry_month"),
+    cardExpiryYear: integer("card_expiry_year"),
+    cardHolderName: text("card_holder_name"),
+    cardSavedAt: timestamp("card_saved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_payers_user_merchant_idx").on(
+      table.userId,
+      table.merchantId,
+    ),
+  ],
+);
+
 // --- Relations ---
 
 export const userRelations = relations(user, ({ many, one }) => ({
@@ -199,6 +238,8 @@ export const userRelations = relations(user, ({ many, one }) => ({
     fields: [user.id],
     references: [merchants.userId],
   }),
+  orders: many(orders),
+  customerPayers: many(customerPayers),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -237,7 +278,22 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
     fields: [orders.merchantId],
     references: [merchants.id],
   }),
+  user: one(user, {
+    fields: [orders.userId],
+    references: [user.id],
+  }),
   items: many(orderItems),
+}));
+
+export const customerPayersRelations = relations(customerPayers, ({ one }) => ({
+  user: one(user, {
+    fields: [customerPayers.userId],
+    references: [user.id],
+  }),
+  merchant: one(merchants, {
+    fields: [customerPayers.merchantId],
+    references: [merchants.id],
+  }),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({

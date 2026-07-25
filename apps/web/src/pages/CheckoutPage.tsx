@@ -1,9 +1,10 @@
 import { Apple, Check, ChevronLeft, CreditCard, LockKeyhole, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { Brand, Button, Field, Money } from "../components/ui";
+import { authClient } from "../lib/auth-client";
 import { apiErrorMessage, productPlaceholder } from "../lib/api-data";
 import type { ProductPublic } from "../lib/api-data";
 import { trpc } from "../lib/trpc";
@@ -13,6 +14,8 @@ type PaymentOption = "card" | "apple" | "google";
 export function CheckoutPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { data: session } = authClient.useSession();
   const [payment, setPayment] = useState<PaymentOption>("card");
   const [error, setError] = useState<string | null>(null);
   const productQuery = trpc.product.getBySlug.useQuery(
@@ -88,8 +91,36 @@ export function CheckoutPage() {
 
         <section className="checkout-section">
           <h2>Contact information</h2>
-          <Field label="Full name" name="name" placeholder="Enter your full name" required />
-          <Field label="Email address" name="email" type="email" placeholder="name@example.com" required />
+          {!session && (
+            <p className="text-xs text-muted">
+              <Link
+                to="/account/login"
+                state={{ from: location.pathname }}
+                className="font-semibold text-primary"
+              >
+                Sign in
+              </Link>{" "}
+              for faster checkout and saved cards — or continue as a guest.
+            </p>
+          )}
+          {/* key remounts the fields once the session loads so defaults apply */}
+          <div key={session?.user.id ?? "guest"} className="grid gap-3">
+            <Field
+              label="Full name"
+              name="name"
+              placeholder="Enter your full name"
+              defaultValue={session?.user.name ?? ""}
+              required
+            />
+            <Field
+              label="Email address"
+              name="email"
+              type="email"
+              placeholder="name@example.com"
+              defaultValue={session?.user.email ?? ""}
+              required
+            />
+          </div>
         </section>
 
         <section className="checkout-section">
