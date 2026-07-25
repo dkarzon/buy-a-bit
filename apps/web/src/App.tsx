@@ -7,6 +7,7 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HomePage } from "./pages/HomePage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { InventoryQrPage } from "./pages/InventoryQrPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PaymentCompletePage } from "./pages/PaymentCompletePage";
@@ -32,6 +33,7 @@ export function App() {
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/inventory/qr" element={<InventoryQrPage />} />
           <Route path="/sales" element={<SalesPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />

@@ -1,4 +1,4 @@
-import { AlertTriangle, Package, Plus } from "lucide-react";
+import { AlertTriangle, Package, Plus, QrCode } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -27,6 +27,9 @@ export function InventoryPage() {
             <h1>Inventory</h1>
             <p>Manage products, stock levels, pricing and availability.</p>
           </div>
+          <Link to="/inventory/qr" className="button button-secondary">
+            <QrCode size={16} /> View all QR codes
+          </Link>
         </div>
 
         <section className="stats-grid">

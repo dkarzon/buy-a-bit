@@ -59,7 +59,10 @@ export function MerchantShell({
               to={path}
               end
               className={({ isActive }) =>
-                isActive || (path === "/inventory" && location.pathname.startsWith("/products"))
+                isActive ||
+                (path === "/inventory" &&
+                  (location.pathname.startsWith("/products") ||
+                    location.pathname.startsWith("/inventory")))
                   ? "active"
                   : ""
               }
@@ -107,7 +110,10 @@ export function MerchantShell({
               to={path}
               end
               className={({ isActive }) =>
-                isActive || (path === "/inventory" && location.pathname.startsWith("/products"))
+                isActive ||
+                (path === "/inventory" &&
+                  (location.pathname.startsWith("/products") ||
+                    location.pathname.startsWith("/inventory")))
                   ? "active"
                   : ""
               }

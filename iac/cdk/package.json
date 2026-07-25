@@ -1,0 +1,22 @@
+{
+  "name": "react-spa-apps-api-mvp-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npx tsc -p tsconfig.json",
+    "synth": "npx cdk synth",
+    "deploy": "npx cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.174.0",
+    "constructs": "10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "aws-cdk": "2.174.0",
+    "@types/aws-lambda": "^8.10.145",
+    "esbuild": "0.24.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.7.2"
+  }
+}
