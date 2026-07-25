@@ -3,12 +3,14 @@ import {
   paymentGetCheckoutContextOutput,
   paymentGetStatusOutput,
   productCreateOutput,
+  productMerchantDetailOutput,
   productPublicOutput,
 } from "@buy-a-bit/shared";
 import type { z } from "zod";
 
 export type ProductPublic = z.infer<typeof productPublicOutput>;
 export type ProductCreated = z.infer<typeof productCreateOutput>;
+export type ProductMerchantDetail = z.infer<typeof productMerchantDetailOutput>;
 export type OrderListRecord = z.infer<typeof orderListItem>;
 export type PaymentCheckoutContext = z.infer<typeof paymentGetCheckoutContextOutput>;
 export type PaymentStatus = z.infer<typeof paymentGetStatusOutput>;

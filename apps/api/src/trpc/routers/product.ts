@@ -63,6 +63,38 @@ export const productRouter = router({
     return rows.map(toProductRecord);
   }),
 
+  get: protectedProcedure
+    .input(productIdInput)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.merchant) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Complete store onboarding first",
+        });
+      }
+
+      const [product] = await ctx.db
+        .select()
+        .from(products)
+        .where(
+          and(eq(products.id, input.id), eq(products.merchantId, ctx.merchant.id)),
+        )
+        .limit(1);
+
+      if (!product) {
+        return null;
+      }
+
+      const landingPageUrl = landingPageUrlForSlug(product.slug);
+      const qrDataUrl = await generateProductQr(landingPageUrl);
+
+      return {
+        ...toProductRecord(product),
+        qrDataUrl,
+        landingPageUrl,
+      };
+    }),
+
   create: protectedProcedure
     .input(productCreateInput)
     .mutation(async ({ ctx, input }) => {

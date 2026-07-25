@@ -84,6 +84,23 @@ export const productCreateOutput = z.object({
   landingPageUrl: z.string().url(),
 });
 
+/** Merchant product detail — edit page, includes QR for the landing URL */
+export const productMerchantDetailOutput = z.object({
+  id: z.string().uuid(),
+  merchantId: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  priceCents: z.number().int(),
+  description: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  stockCount: z.number().int().nullable(),
+  isAvailable: z.boolean(),
+  sortOrder: z.number().int(),
+  createdAt: z.coerce.date(),
+  qrDataUrl: z.string(),
+  landingPageUrl: z.string().url(),
+});
+
 export const productPublicOutput = z.object({
   id: z.string().uuid(),
   slug: z.string(),

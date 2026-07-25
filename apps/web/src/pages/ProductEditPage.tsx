@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, QrCode, Save, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -6,20 +6,22 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { MerchantShell } from "../components/MerchantShell";
 import { Button, Field } from "../components/ui";
 import { apiErrorMessage } from "../lib/api-data";
-import type { ProductRecord } from "../lib/api-data";
+import type { ProductMerchantDetail } from "../lib/api-data";
 import { trpc } from "../lib/trpc";
 
 export function ProductEditPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
-  const productsQuery = trpc.product.list.useQuery();
+  const productQuery = trpc.product.get.useQuery(
+    { id: id! },
+    { enabled: Boolean(id) },
+  );
   const updateProduct = trpc.product.update.useMutation();
   const deleteProduct = trpc.product.delete.useMutation();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const products = (productsQuery.data ?? []) as ProductRecord[];
-  const product = products.find((item) => item.id === id);
+  const product = productQuery.data as ProductMerchantDetail | null | undefined;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,7 +42,10 @@ export function ProductEditPage() {
         description: description || null,
         isAvailable: form.get("isAvailable") === "on",
       });
-      await utils.product.list.invalidate();
+      await Promise.all([
+        utils.product.get.invalidate({ id: product.id }),
+        utils.product.list.invalidate(),
+      ]);
       setMessage("Product changes saved.");
     } catch (caught) {
       setError(apiErrorMessage(caught, "Could not update product"));
@@ -59,7 +64,7 @@ export function ProductEditPage() {
     }
   }
 
-  if (productsQuery.isPending) {
+  if (productQuery.isPending) {
     return (
       <MerchantShell title="Inventory">
         <main className="grid min-h-[70vh] place-items-center text-sm text-muted">Loading product from inventory…</main>
@@ -67,14 +72,14 @@ export function ProductEditPage() {
     );
   }
 
-  if (productsQuery.isError) {
+  if (productQuery.isError) {
     return (
       <MerchantShell title="Inventory">
         <main className="grid min-h-[70vh] place-items-center px-6 text-center">
           <div className="grid gap-3">
             <h1 className="text-xl font-semibold">Could not load product</h1>
-            <p className="text-sm text-muted">{productsQuery.error.message}</p>
-            <Button onClick={() => void productsQuery.refetch()}>Try again</Button>
+            <p className="text-sm text-muted">{productQuery.error.message}</p>
+            <Button onClick={() => void productQuery.refetch()}>Try again</Button>
             <Link className="button button-secondary" to="/inventory">Return to inventory</Link>
           </div>
         </main>
@@ -113,6 +118,18 @@ export function ProductEditPage() {
             </div>
             <Link className="icon-button" to={`/p/${product.slug}`} aria-label="View product"><ExternalLink size={18} /></Link>
           </div>
+
+          <section className="settings-card mt-7 text-center">
+            <span className="mx-auto grid size-12 place-items-center rounded-full bg-blue-50 text-primary"><QrCode size={22} /></span>
+            <div>
+              <h2 className="text-lg font-semibold">Product QR code</h2>
+              <p className="mt-1 text-sm text-muted">Customers scan this to open the live product page.</p>
+            </div>
+            <img className="mx-auto size-52" src={product.qrDataUrl} alt={`QR code for ${product.name}`} />
+            <a className="button button-secondary" href={product.landingPageUrl} target="_blank" rel="noreferrer">
+              View product page <ExternalLink size={16} />
+            </a>
+          </section>
 
           <form key={product.id} className="mt-7 flex flex-col gap-4" onSubmit={(event) => void save(event)}>
             <Field label="Product name" name="name" defaultValue={product.name} required maxLength={120} />
