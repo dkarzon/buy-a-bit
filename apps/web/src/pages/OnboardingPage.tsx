@@ -8,6 +8,7 @@ import { trpc } from "../lib/trpc";
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const utils = trpc.useUtils();
   const [error, setError] = useState<string | null>(null);
   const createMerchant = trpc.merchant.create.useMutation();
 
@@ -23,6 +24,7 @@ export function OnboardingPage() {
         businessName,
         pinchConnectionMode: "managed",
       });
+      await utils.merchant.me.invalidate();
       navigate("/dashboard");
     } catch (err) {
       const message =

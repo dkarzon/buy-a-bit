@@ -21,7 +21,7 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/p/:slug" element={<ProductLandingPage />} />
         <Route path="/pay/:orderId" element={<PaymentPage />} />
-        <Route path="/checkout/:productId" element={<CheckoutPage />} />
+        <Route path="/checkout/:slug" element={<CheckoutPage />} />
         <Route path="/payment/complete" element={<PaymentCompletePage />} />
 
         <Route element={<ProtectedRoute />}>

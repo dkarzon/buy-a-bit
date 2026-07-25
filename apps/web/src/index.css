@@ -51,6 +51,7 @@ h1, h2, h3, p { margin: 0; }
   transition: 160ms ease;
 }
 .button:hover { transform: translateY(-1px); }
+.button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .button-primary { color: white; background: var(--primary-bright); box-shadow: 0 5px 14px #003d9b1f; }
 .button-primary:hover { background: var(--primary); }
 .button-secondary { color: var(--ink); background: white; border-color: var(--outline); }
@@ -86,6 +87,7 @@ h1, h2, h3, p { margin: 0; }
 .status-paid { color: #10643c; background: #d9f4e6; }
 .status-pending { color: #895400; background: #fff0c9; }
 .status-refunded { color: #8f2630; background: #ffe0e3; }
+.status-failed { color: #8f2630; background: #ffe0e3; }
 .status-neutral { color: var(--muted); background: var(--surface-high); }
 
 /* Dashboard */
@@ -154,6 +156,12 @@ h1, h2, h3, p { margin: 0; }
 .order-row strong { font-size: 12px; }
 .order-row p { margin: 3px 0 7px; color: var(--muted); font-size: 10px; }
 .order-list-footer { display: block; padding: 15px; text-align: center; color: var(--primary); background: var(--surface-low); font-size: 11px; font-weight: 600; }
+.empty-state {
+  min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  padding: 24px; border: 1px dashed var(--outline); border-radius: 12px; color: var(--muted); background: #ffffff80;
+  text-align: center; font-size: 12px;
+}
+.empty-state strong { color: var(--ink); font-size: 14px; }
 
 /* Storefront */
 .store-page, .checkout-page, .settings-page {
@@ -212,6 +220,7 @@ h1, h2, h3, p { margin: 0; }
   border: 1px solid var(--outline); border-radius: 9px; color: var(--ink); background: white; font-size: 12px; font-weight: 500;
 }
 .payment-options > button.active { border-color: var(--primary-bright); background: #f2f6ff; box-shadow: 0 0 0 1px var(--primary-bright); }
+.payment-options > button:disabled { cursor: not-allowed; opacity: .48; }
 .payment-options i, .saved-methods i { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--primary-bright); }
 .card-mini { padding: 3px 4px; border-radius: 3px; background: var(--primary-soft); color: var(--primary); font-size: 7px; font-weight: 700; }
 .google-g { font-weight: 700; color: #4285f4; }
