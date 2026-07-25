@@ -4,7 +4,7 @@ import {
   productIdInput,
   productUpdateInput,
 } from "@buy-a-bit/shared";
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { randomBytes } from "node:crypto";
 
@@ -32,10 +32,35 @@ function createProductSlug(name: string): string {
   return `${base}-${randomBytes(4).toString("hex")}`;
 }
 
+function toProductRecord(product: typeof products.$inferSelect) {
+  return {
+    id: product.id,
+    merchantId: product.merchantId,
+    slug: product.slug,
+    name: product.name,
+    priceCents: product.priceCents,
+    description: product.description,
+    imageUrl: product.imageUrl,
+    stockCount: product.stockCount,
+    isAvailable: product.isAvailable,
+    sortOrder: product.sortOrder,
+    createdAt: product.createdAt,
+  };
+}
+
 export const productRouter = router({
-  list: protectedProcedure.query(async () => {
-    // Day 1: list products for ctx.merchant
-    return [];
+  list: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.merchant) {
+      return [];
+    }
+
+    const rows = await ctx.db
+      .select()
+      .from(products)
+      .where(eq(products.merchantId, ctx.merchant.id))
+      .orderBy(asc(products.sortOrder), desc(products.createdAt));
+
+    return rows.map(toProductRecord);
   }),
 
   create: protectedProcedure
@@ -88,9 +113,46 @@ export const productRouter = router({
 
   update: protectedProcedure
     .input(productUpdateInput)
-    .mutation(async ({ input }) => {
-      void input;
-      throw new Error("Not implemented");
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.merchant) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Complete store onboarding first",
+        });
+      }
+
+      const { id, ...fields } = input;
+      const patch: Partial<typeof products.$inferInsert> = {};
+      if (fields.name !== undefined) patch.name = fields.name;
+      if (fields.priceCents !== undefined) patch.priceCents = fields.priceCents;
+      if (fields.description !== undefined) patch.description = fields.description;
+      if (fields.imageUrl !== undefined) patch.imageUrl = fields.imageUrl;
+      if (fields.stockCount !== undefined) patch.stockCount = fields.stockCount;
+      if (fields.isAvailable !== undefined) patch.isAvailable = fields.isAvailable;
+
+      if (Object.keys(patch).length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No product fields to update",
+        });
+      }
+
+      const [updated] = await ctx.db
+        .update(products)
+        .set(patch)
+        .where(
+          and(eq(products.id, id), eq(products.merchantId, ctx.merchant.id)),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
+      }
+
+      return toProductRecord(updated);
     }),
 
   delete: protectedProcedure
