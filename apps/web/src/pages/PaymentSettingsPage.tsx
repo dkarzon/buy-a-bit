@@ -1,20 +1,51 @@
-import { ArrowLeft, Check, CreditCard, Plus, Settings, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Settings, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button, Field, MobileNav } from "../components/ui";
-import { paymentMethods } from "../lib/mock-data";
+import { apiErrorMessage } from "../lib/api-data";
+import { trpc } from "../lib/trpc";
 
 export function PaymentSettingsPage() {
   const navigate = useNavigate();
-  const [defaultMethod, setDefaultMethod] = useState("apple");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const utils = trpc.useUtils();
+  const merchantQuery = trpc.merchant.me.useQuery();
+  const updateProfile = trpc.merchant.updateProfile.useMutation();
+  const account = merchantQuery.data;
 
-  function save(event: FormEvent) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2200);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      await updateProfile.mutateAsync({
+        businessName: String(form.get("businessName") ?? "").trim(),
+      });
+      await utils.merchant.me.invalidate();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (caught) {
+      setError(apiErrorMessage(caught, "Could not update merchant profile"));
+    }
+  }
+
+  if (merchantQuery.isPending) {
+    return <main className="grid min-h-screen place-items-center text-sm text-muted">Loading payment settings…</main>;
+  }
+
+  if (merchantQuery.isError || !account?.merchant) {
+    return (
+      <main className="grid min-h-screen place-items-center px-6 text-center">
+        <div className="grid gap-3">
+          <h1 className="text-xl font-semibold">Could not load settings</h1>
+          <p className="text-sm text-muted">{merchantQuery.error?.message ?? "Merchant profile was not found."}</p>
+          <Button onClick={() => void merchantQuery.refetch()}>Try again</Button>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -25,45 +56,45 @@ export function PaymentSettingsPage() {
         <button aria-label="Settings"><Settings size={18} /></button>
       </header>
 
-      <form className="settings-main" onSubmit={save}>
+      <form key={account.merchant.id} className="settings-main" onSubmit={(event) => void save(event)}>
         <section>
-          <h2 className="eyebrow">Saved payment methods</h2>
+          <h2 className="eyebrow">Payment connection</h2>
           <div className="saved-methods">
-            {paymentMethods.map((method) => (
-              <button
-                key={method.id}
-                type="button"
-                className={defaultMethod === method.id ? "selected" : ""}
-                onClick={() => setDefaultMethod(method.id)}
-              >
-                <span className={`payment-brand brand-${method.id}`}>
-                  {method.id === "card" ? <CreditCard size={17} /> : method.brand[0]}
-                </span>
-                <span className="min-w-0 flex-1 text-left">
-                  <strong>{method.detail}</strong>
-                  <small>{method.subline}</small>
-                </span>
-                {defaultMethod === method.id ? <i><Check size={12} /></i> : <span className="edit">Edit</span>}
-              </button>
-            ))}
-            <button type="button" className="add-method"><Plus size={16} /> Add new payment method</button>
+            <div className="flex min-h-16 items-center gap-3 rounded-lg border border-[var(--outline)] bg-white p-3">
+              <span className="payment-brand brand-card"><CreditCard size={17} /></span>
+              <span className="min-w-0 flex-1">
+                <strong className="block text-xs font-medium">
+                  {account.merchant.pinchConnectionMode === "byok" ? "Connected Pinch account" : "Managed payments"}
+                </strong>
+                <small className="mt-1 block text-[10px] text-muted">
+                  Status: {account.merchant.pinchMerchantStatus ?? "pending setup"}
+                </small>
+              </span>
+              <span className={`status ${account.merchant.pinchMerchantStatus === "active" ? "status-paid" : "status-pending"}`}>
+                {account.merchant.pinchMerchantStatus ?? "Pending"}
+              </span>
+            </div>
           </div>
         </section>
 
         <section>
-          <h2 className="eyebrow">Billing details</h2>
+          <h2 className="eyebrow">Merchant profile</h2>
           <div className="settings-card">
-            <Field label="Full name" defaultValue="Alex Merchant" />
-            <Field label="Email address" type="email" defaultValue="alex.merchant@buyabit.com" />
+            <Field label="Business name" name="businessName" defaultValue={account.merchant.businessName} required maxLength={120} />
+            <Field label="Account email" type="email" value={account.user.email} readOnly disabled />
+            <Field label="Store slug" value={account.merchant.storeSlug ?? "Assigned when your store goes live"} readOnly disabled />
           </div>
         </section>
 
         <aside className="security-note">
           <ShieldCheck size={18} />
-          <p><strong>Your payment information is encrypted and stored securely.</strong> Buy-a-bit never stores your full card number on our servers.</p>
+          <p><strong>Payment credentials are managed securely.</strong> Buy-a-bit only receives tokenised card details and never sends raw card numbers to the application database.</p>
         </aside>
 
-        <Button type="submit" className="w-full">Save changes</Button>
+        {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+        <Button type="submit" className="w-full" disabled={updateProfile.isPending}>
+          {updateProfile.isPending ? "Saving…" : "Save changes"}
+        </Button>
       </form>
 
       <MobileNav />

@@ -3,13 +3,50 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Brand, Button, Money } from "../components/ui";
-import { products } from "../lib/mock-data";
+import { productPlaceholder } from "../lib/api-data";
+import type { ProductPublic } from "../lib/api-data";
+import { trpc } from "../lib/trpc";
 
 export function ProductLandingPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const [colour, setColour] = useState("Merchant blue");
-  const product = products.find((item) => item.slug === slug) ?? products[2];
+  const productQuery = trpc.product.getBySlug.useQuery(
+    { slug: slug ?? "" },
+    { enabled: Boolean(slug), retry: false },
+  );
+  const product = productQuery.data as ProductPublic | null | undefined;
+
+  if (productQuery.isPending) {
+    return <main className="grid min-h-screen place-items-center text-sm text-muted">Loading product…</main>;
+  }
+
+  if (productQuery.isError) {
+    return (
+      <main className="grid min-h-screen place-items-center px-6 text-center">
+        <div className="grid max-w-sm gap-3">
+          <h1 className="text-xl font-semibold">Could not load this product</h1>
+          <p className="text-sm text-muted">{productQuery.error.message}</p>
+          <Button onClick={() => void productQuery.refetch()}>Try again</Button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!product) {
+    return (
+      <main className="grid min-h-screen place-items-center px-6 text-center">
+        <div className="grid max-w-sm gap-3">
+          <Brand />
+          <h1 className="text-xl font-semibold">Product not found</h1>
+          <p className="text-sm text-muted">This product does not exist or is no longer available.</p>
+          <Link className="button button-secondary" to="/">Return home</Link>
+        </div>
+      </main>
+    );
+  }
+
+  const canPurchase = product.isAvailable && product.merchant.isStoreOpen && (product.stockCount ?? 1) > 0;
 
   return (
     <div className="store-page">
@@ -24,7 +61,7 @@ export function ProductLandingPage() {
 
       <main className="product-view">
         <section className="product-image">
-          <img src={product.image} alt={product.name} />
+          <img src={product.imageUrl ?? productPlaceholder} alt={product.name} />
           <div className="image-dots" aria-label="Image 1 of 3"><b /><span /><span /></div>
         </section>
 
@@ -32,14 +69,14 @@ export function ProductLandingPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1>{product.name}</h1>
-              <strong className="product-price"><Money value={product.price} /></strong>
+              <strong className="product-price"><Money cents={product.priceCents} /></strong>
             </div>
             <button className="icon-button" aria-label="Add to favourites"><Heart size={19} /></button>
           </div>
 
           <div>
             <h2>Description</h2>
-            <p>{product.description}</p>
+            <p>{product.description ?? "No description has been provided for this product."}</p>
           </div>
 
           <div>
@@ -76,11 +113,14 @@ export function ProductLandingPage() {
 
       <div className="purchase-bar">
         <button className="cart-button" aria-label="Add to cart"><ShoppingCart size={19} /></button>
-        <Button onClick={() => navigate(`/checkout/${product.id}`)} className="flex-1">
-          Buy now <span aria-hidden>→</span>
+        <Button
+          onClick={() => navigate(`/checkout/${product.slug}`)}
+          className="flex-1"
+          disabled={!canPurchase}
+        >
+          {canPurchase ? "Buy now" : "Currently unavailable"} {canPurchase && <span aria-hidden>→</span>}
         </Button>
       </div>
-      <Link className="sr-only" to="/checkout/prod_3">Checkout</Link>
     </div>
   );
 }

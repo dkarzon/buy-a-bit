@@ -51,21 +51,22 @@ export function Field({ label, hint, className = "", ...props }: FieldProps) {
   );
 }
 
-export function StatusPill({ status }: { status: "Paid" | "Pending" | "Refunded" }) {
-  return <span className={`status status-${status.toLowerCase()}`}>{status}</span>;
+export function StatusPill({ status }: { status: "paid" | "pending" | "failed" }) {
+  const label = status === "paid" ? "Paid" : status === "pending" ? "Pending" : "Failed";
+  return <span className={`status status-${status}`}>{label}</span>;
 }
 
-export function Money({ value }: { value: number }) {
+export function Money({ cents }: { cents: number }) {
   return (
     <>
-      ${value.toFixed(2)} <small className="text-[10px] font-medium text-muted">AUD</small>
+      ${(cents / 100).toFixed(2)} <small className="text-[10px] font-medium text-muted">AUD</small>
     </>
   );
 }
 
 const mobileItems = [
   { label: "Home", path: "/dashboard", icon: Home },
-  { label: "Scan", path: "/p/executive-slim-wallet", icon: QrCode },
+  { label: "Products", path: "/dashboard#inventory", icon: QrCode },
   { label: "Settings", path: "/settings/payment", icon: Settings },
   { label: "Orders", path: "/dashboard?view=orders", icon: Package },
 ];

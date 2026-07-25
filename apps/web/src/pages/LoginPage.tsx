@@ -5,9 +5,11 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { Brand, Button, Field } from "../components/ui";
 import { authClient } from "../lib/auth-client";
+import { trpc } from "../lib/trpc";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const utils = trpc.useUtils();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -45,7 +47,8 @@ export function LoginPage() {
         setError(signInError.message ?? "Invalid email or password");
         return;
       }
-      navigate("/dashboard");
+      const account = await utils.merchant.me.fetch();
+      navigate(account.merchant ? "/dashboard" : "/onboarding");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
