@@ -8,6 +8,8 @@ Card data never hits Buy-a-bit servers. Merchants connect via **managed** Pinch 
 
 Deeper product and architecture notes: [docs/idea1-buy-a-bit.md](./docs/idea1-buy-a-bit.md) and [docs/idea1-buy-a-bit-tech-stack.md](./docs/idea1-buy-a-bit-tech-stack.md).
 
+Designs generated with help from [Stitch](https://stitch.withgoogle.com/projects/18321189259567826889)
+
 ## Phase 0 scaffold
 
 | App / package | Path | Port |
