@@ -69,15 +69,20 @@ export function InventoryPage() {
                   {products.map((product) => (
                     <tr key={product.id}>
                       <td>
-                        <div className="table-entity">
+                        <Link className="table-entity" to={`/p/${product.slug}`} title="Open public product page">
                           <img src={product.imageUrl ?? productPlaceholder} alt="" />
                           <div><strong>{product.name}</strong><span>/{product.slug}</span></div>
-                        </div>
+                        </Link>
                       </td>
                       <td><span className={`status ${product.isAvailable ? "status-paid" : "status-failed"}`}>{product.isAvailable ? "Active" : "Unavailable"}</span></td>
                       <td><span className={(product.stockCount ?? 0) < 5 ? "text-amber-700 font-semibold" : ""}>{product.stockCount ?? 0}</span></td>
                       <td><strong><Money cents={product.priceCents} /></strong></td>
-                      <td><Link className="table-action" to={`/products/${product.id}`}>Edit</Link></td>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <Link className="table-action" to={`/p/${product.slug}`}>View</Link>
+                          <Link className="table-action" to={`/products/${product.id}`}>Edit</Link>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
