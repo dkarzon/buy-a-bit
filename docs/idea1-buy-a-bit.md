@@ -3,9 +3,11 @@
 
 Merchants create a small product catalogue.  
 Each product gets a **unique QR/NFC landing page**.  
-Customers tap/scan → enter contact details → get forwarded to a **Pinch Payment Link** → return to your app with payment confirmation → product is marked as purchased.
+Customers tap/scan → enter contact details → pay on **Buy-a-bit’s custom payment page** (Pinch CaptureJS tokenisation + realtime charge) → confirmation → product is marked as purchased.
 
 This is perfect for cafés, markets, creators, events, clubs, and pop‑ups.
+
+Card data never hits Buy-a-bit servers — CaptureJS tokenises in the browser ([docs](https://docs.getpinch.com.au/docs/capturejs-tokenisation)); the API charges via `POST /payments/realtime` ([credit card guide](https://docs.getpinch.com.au/docs/credit-card-payments)).
 
 ---
 
@@ -15,7 +17,7 @@ This is perfect for cafés, markets, creators, events, clubs, and pop‑ups.
 - Merchant signs in (email/password or Pinch OAuth).
 - On first onboarding, chooses how they connect to Pinch (see **Pinch Connection Modes** below):
   - **Managed** — platform creates a Pinch sub-merchant under Buy-a-bit’s credentials.
-  - **Bring your own keys (BYOK)** — existing Pinch merchant pastes their Application ID + Secret.
+  - **Bring your own keys (BYOK)** — existing Pinch merchant pastes Application ID, Secret, and **Publishable Key**.
 - Creates a product list:
   - Name  
   - Price  
@@ -25,7 +27,6 @@ This is perfect for cafés, markets, creators, events, clubs, and pop‑ups.
   - Optional variants (size, colour, etc.)
 - For each product, your app:
   - Generates a **unique landing page URL** (e.g., `/p/{slug}`)
-  - Creates a **Pinch Payment Link** on demand at checkout (scoped to that merchant’s Pinch account)
   - Generates a **QR code** and optionally writes the URL to an **NFC tag**
 
 ### **2. Customer Experience**
@@ -34,24 +35,24 @@ This is perfect for cafés, markets, creators, events, clubs, and pop‑ups.
   - Product details  
   - Price  
   - Contact form (name, email, phone)  
-  - “Continue to Payment” button  
+  - “Continue to Payment” → navigates to **custom payment page** (`/pay/:orderId`)
 
-### **3. Payment Flow**
-- Your backend resolves the product’s merchant and builds a **merchant-scoped Pinch client**:
-  - Managed → platform Application credentials + `Current-Merchant: mch_…`
-  - BYOK → that merchant’s stored Application credentials
-- Creates a **Payment Link** via Pinch API with:
-  - amount (from DB, never from the client)  
-  - metadata (orderId, productId, customer info, merchantId)  
-  - returnUrl → `/payment/complete?session={orderId}`  
-- Customer is redirected to the Pinch‑hosted checkout.
-- After payment, Pinch redirects back to your app.
+### **3. Payment Flow (custom page — no Pinch Payment Links)**
+1. Backend creates a **pending order** (amount from DB; never trust client price).
+2. Payment page loads the merchant’s **publishable key** (`pk_test_…` / `pk_live_…`) and initialises CaptureJS.
+3. Customer enters card details in your UI; browser calls `capture.createToken({ sourceType: "credit-card", … })`.
+4. Frontend sends only the short-lived **token** to `payment.charge` (never PAN/CVC).
+5. Backend resolves a **merchant-scoped Pinch client**:
+   - Managed → platform Application credentials + `Current-Merchant: mch_…`
+   - BYOK → that merchant’s stored Application credentials
+6. Backend: create/update **Payer** → `POST /payments/realtime` with `payerId`, `amount` (cents from order), `creditCardToken`, metadata.
+7. Immediate response drives success/failure UX; navigate to `/payment/complete?session={orderId}`.
 
 ### **4. Post‑Payment**
 - Your app:
-  - Accepts Pinch webhooks as source of truth for `paid` / `failed`.
-  - Optionally calls Pinch API to verify on return URL (UX fallback).
-  - Shows a “Success” page.
+  - Uses the realtime API response for instant UX.
+  - Accepts Pinch webhooks (`realtime-payment`, etc.) as source of truth / reconciliation for `paid` / `failed`.
+  - Shows a “Success” (or failure) page.
   - Sends merchant + customer a receipt/notification (stretch).
 
 ---
@@ -106,16 +107,17 @@ Current-Merchant: mch_XXXXXXXXXXXXXXXX
 **Who it’s for:** Merchants who already have a Pinch account and Application keys.
 
 **How auth works**
-- Merchant pastes **Application ID** + **Secret Key** during onboarding (from [Pinch API Keys](https://web.getpinch.com.au/api-keys)).
+- Merchant pastes **Application ID** + **Secret Key** + **Publishable Key** during onboarding (from [Pinch API Keys](https://web.getpinch.com.au/api-keys)).
 - Prefer Application auth over deprecated Merchant-ID-as-client_id ([docs](https://docs.getpinch.com.au/docs/application-authentication)).
-- Store credentials **encrypted at rest** on the merchant row (never `VITE_` / never return secrets to the client).
-- Pinch calls for that store use **their** Bearer token only — no `Current-Merchant` header.
+- Store secret credentials **encrypted at rest** on the merchant row (never `VITE_` / never return secrets to the client).
+- Publishable key (`pk_…`) is safe for the browser; return it from public payment-page APIs only for that order’s merchant.
+- Pinch server calls for that store use **their** Bearer token only — no `Current-Merchant` header.
 - Optionally store their Pinch merchant id (`mch_…`) if available for display/reconciliation.
 
 **Onboarding sequence (BYOK)**
 1. Merchant signs up and chooses “I already use Pinch”.
-2. Paste Application ID + Secret; API exchanges them for a token (`POST …/connect/token`) to validate.
-3. Persist encrypted secrets + connection mode `byok`.
+2. Paste Application ID + Secret + Publishable Key; API exchanges secret creds for a token (`POST …/connect/token`) to validate.
+3. Persist encrypted secrets + publishable key + connection mode `byok`.
 4. Webhooks: either (a) create a webhook subscription with their credentials pointing at `{API_URL}/webhooks/pinch`, or (b) instruct them to register that URL in the Pinch portal and store their webhook signing secret for verification.
 
 **Pros:** Existing Pinch merchants keep their own settlements and portal; no managed-merchant enablement needed.  
@@ -127,10 +129,12 @@ Current-Merchant: mch_XXXXXXXXXXXXXXXX
 |--------|------|
 | Token cache | Cache OAuth client-credentials tokens (~1h); refresh before expiry |
 | Checkout | Always load product/price from DB; never trust client amount |
-| Payment Links | `POST /payment-links` via the resolved client (recommended path) |
-| Webhooks | Source of truth for order status; verify signature before mutating |
-| Secrets | Server-only; BYOK secrets encrypted; never log raw keys |
-| Routing | `createCheckout` picks credentials from the **product’s merchant**, not the session (customers are anonymous) |
+| Card data | Tokenise client-side with CaptureJS only; server accepts `creditCardToken` |
+| Charge | `POST /payers` + `POST /payments/realtime` via the resolved client |
+| Publishable key | Managed → platform `PINCH_PUBLISHABLE_KEY`; BYOK → merchant’s stored `pk_…` |
+| Webhooks | Reconcile / confirm order status; verify signature before mutating |
+| Secrets | Server-only Application secrets; BYOK secrets encrypted; never log raw keys |
+| Routing | `payment.charge` picks credentials from the **order’s merchant**, not the session (customers are anonymous) |
 
 ### Hackathon default
 
@@ -147,36 +151,42 @@ Current-Merchant: mch_XXXXXXXXXXXXXXXX
 - Pages:
   - Merchant dashboard  
   - Product creation  
-  - Product landing pages  
-  - Payment confirmation page  
+  - Product landing pages (`/p/:slug`)  
+  - **Custom payment page** (`/pay/:orderId`) — CaptureJS card form  
+  - Payment confirmation page (`/payment/complete`)  
 
 ### **Backend**
 - Node/Go/Python — whatever you like
 - Responsibilities:
   - Merchant auth  
   - Product CRUD  
-  - Payment Link creation  
+  - Order create + realtime charge (payer + payment)  
   - Webhook listener  
   - NFC/QR generation  
-  - Payment verification  
+  - Publishable-key resolution for the payment page  
 
 ### **Pinch API Usage**
 
 Auth (both modes): OAuth2 client credentials → Bearer token  
 ([Application Authentication](https://docs.getpinch.com.au/docs/application-authentication)).
 
+Client-side: [CaptureJS](https://docs.getpinch.com.au/docs/capturejs-tokenisation) with the merchant’s publishable key → `creditCardToken`.
+
 | Call | Managed | BYOK |
 |------|---------|------|
 | `POST /merchants/managed` | Platform creds, no `Current-Merchant` | n/a |
 | `POST /merchants/upload-document` | Platform + `Current-Merchant` | n/a (merchant already verified) |
 | `POST /webhooks` | Platform + `Current-Merchant` | Merchant’s own creds |
-| `POST /payment-links` | Platform + `Current-Merchant` | Merchant’s own creds |
+| `POST /payers` | Platform + `Current-Merchant` | Merchant’s own creds |
+| `POST /payments/realtime` | Platform + `Current-Merchant` | Merchant’s own creds |
 | `GET /payments/{id}` | Platform + `Current-Merchant` | Merchant’s own creds |
 
-**Webhooks** (source of truth): payment success/failure events → update `orders.status`.  
+**Do not use** Pinch Payment Links (`POST /payment-links`) for MVP — checkout is first-party.
+
+**Webhooks:** `realtime-payment` (and related payment events) → update `orders.status`.  
 Also `compliance-updated` for managed merchants.
 
-Metadata you’ll attach:
+Metadata you’ll attach on the realtime payment:
 ```json
 {
   "orderId": "…",
@@ -199,6 +209,7 @@ Metadata you’ll attach:
 - **pinchMerchantId** — Pinch `mch_…` (required for managed; optional for BYOK)  
 - **pinchApplicationId** — BYOK only (nullable for managed)  
 - **pinchSecretKeyEncrypted** — BYOK only; never expose to client  
+- **pinchPublishableKey** — BYOK: merchant `pk_…`; managed: use platform env (nullable on row)  
 - **pinchWebhookSecretEncrypted** — optional; per-merchant verify for BYOK  
 - **pinchComplianceStatus** — managed: `pending` \| `in_review` \| `approved` \| `rejected`  
 - **pinchMerchantStatus** — e.g. `unverified` \| `active` (gate live payments)  
@@ -219,8 +230,8 @@ Metadata you’ll attach:
 - merchantId  
 - customerName  
 - customerEmail  
-- paymentLinkId  
-- paymentId  
+- payerId (Pinch `pyr_…`, set at charge)  
+- paymentId (Pinch `pmt_…`)  
 - status (pending, paid, failed)  
 
 ---
@@ -258,16 +269,16 @@ Perfect hackathon energy.
 
 ### **Day 1**
 - Merchant login  
-- Onboarding: choose **managed** vs **BYOK**; create managed merchant *or* validate pasted Application keys  
+- Onboarding: choose **managed** vs **BYOK**; create managed merchant *or* validate pasted Application + publishable keys  
 - Product creation UI  
 - Landing page template  
 - QR code generation  
 - Merchant-scoped Pinch client (`Current-Merchant` or BYOK token)  
-- Payment Link creation + redirect to Pinch checkout  
+- Custom payment page + CaptureJS tokenisation + `payment.charge` (realtime)  
 
 ### **Day 2**
-- Return URL handling  
-- Payment verification + webhook handler (verify signature; map events → order status)  
+- Confirmation page + status polling/`payment.getStatus`  
+- Webhook handler (verify signature; map events → order status)  
 - Managed: webhook subscribe on create; optional compliance stub / Glassbox  
 - Simple merchant dashboard  
 - NFC writing (optional but cool)  
@@ -291,11 +302,11 @@ Perfect hackathon energy.
 4. **Enter contact details**  
    “I enter my name and email.”
 
-5. **Redirect to Pinch checkout**  
-   “This is a secure Pinch‑hosted payment page.”
+5. **Custom payment page**  
+   “Card details stay in the browser — CaptureJS tokenises them; we never see the card number.”
 
 6. **Complete payment**  
-   “After paying, I’m redirected back to the app.”
+   “We charge via Pinch realtime API and show success immediately.”
 
 7. **Merchant dashboard updates**  
    “The order appears instantly with customer details.”

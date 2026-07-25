@@ -9,7 +9,7 @@ export function PaymentCompletePage() {
       <h1 className="text-3xl font-semibold">Payment complete</h1>
       <p className="text-sm opacity-70">
         Session: {session ?? "(missing)"} — calls{" "}
-        <code>payment.verifyReturn</code> (Day 2).
+        <code>payment.getStatus</code> (Day 2).
       </p>
     </main>
   );

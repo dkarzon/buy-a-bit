@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo. Humans: see [README.md](./RE
 
 ## What this is
 
-**buy-a-bit** — Pinch Hackathon app: NFC/QR → product landing page → Pinch Payment Link → confirmation. Merchants manage products; customers stay anonymous.
+**buy-a-bit** — Pinch Hackathon app: NFC/QR → product landing → custom CaptureJS payment page → realtime charge → confirmation. Merchants manage products; customers stay anonymous.
 
 pnpm monorepo, Node ≥ 20:
 
@@ -40,7 +40,7 @@ pnpm db:generate && pnpm db:migrate   # real migrations before shared/deployed D
 - Store money as **integer cents** (`priceCents`), never floats.
 - Keep Pinch HTTP in `apps/api/src/services/`; routers orchestrate, services call Pinch.
 - Resolve Pinch via `pinchClientForMerchant(merchant)`: **managed** = platform Application credentials + `Current-Merchant: mch_…`; **BYOK** = merchant’s encrypted Application ID/Secret (no impersonation header). See [Managed Merchants](https://docs.getpinch.com.au/docs/managed-merchants) and `docs/idea1-buy-a-bit.md`.
-- Treat **webhooks as source of truth** for payment status; return-URL verify is UX fallback.
+- Treat **webhooks as reconciliation** for payment status; realtime API response drives immediate UX on the custom payment page.
 - Use `credentials: "include"` on the web tRPC client; CORS must allow `WEB_URL` with credentials.
 - Prefer existing patterns: ESM `.js` import suffixes in API, `publicProcedure` / `protectedProcedure`, pages under `apps/web/src/pages/`.
 - Run `pnpm typecheck` after substantive TS changes and fix errors you introduced.
@@ -84,7 +84,7 @@ packages/shared/    contract of record for procedure I/O
 **Key flows**
 
 1. Merchant: sign-in → onboarding (`merchant.create` with `managed` or `byok`) → product CRUD → QR/landing URL.
-2. Customer: `/p/:slug` → `order.createCheckout` → Pinch redirect (merchant-scoped client) → `/payment/complete?session={orderId}` → `payment.verifyReturn`.
+2. Customer: `/p/:slug` → `order.create` → `/pay/:orderId` (CaptureJS) → `payment.charge` → `/payment/complete?session={orderId}`.
 3. Async: Pinch webhook updates `orders.status` (`pending` | `paid` | `failed`); managed may also receive `compliance-updated`.
 
 **Auth**
@@ -98,8 +98,9 @@ packages/shared/    contract of record for procedure I/O
 - **Contract-first:** change `@buy-a-bit/shared` when procedure shapes change; keep API `.input()` wired to those schemas.
 - **Types:** export `AppRouter` from API; web imports `api/router` for client typing.
 - **IDs:** UUIDs in shared schemas; product public URLs use **slug** (`/p/:slug`), not raw UUID.
-- **Return URL:** `{WEB_URL}/payment/complete?session={orderId}`.
-- **Pinch metadata** on payment links: `orderId`, `productId`, `merchantId`, `customerName`, `customerEmail`.
+- **Return URL / confirmation:** `{WEB_URL}/payment/complete?session={orderId}` after custom-page charge (not a Pinch hosted return URL).
+- **Pinch metadata** on realtime payments: `orderId`, `productId`, `merchantId`, `customerName`, `customerEmail`.
+- **Payments:** CaptureJS client tokenisation + `POST /payments/realtime` — do not use Pinch Payment Links for MVP.
 - **DB:** one Drizzle schema file for auth + app tables; generate Better Auth tables via `@better-auth/cli generate` then merge.
 - **UI:** Tailwind utility styling; no required component library for MVP. Match existing page structure.
 - **Scope:** implement MVP paths in the tech-stack doc before stretch admin/store catalog unless asked.
@@ -117,11 +118,12 @@ packages/shared/    contract of record for procedure I/O
 ## Security checklist (payments & auth)
 
 - [ ] Webhook verifies signature (`PINCH_WEBHOOK_SECRET` and/or per-BYOK secret) before mutating orders
-- [ ] Checkout loads product/price from DB; ignores client price; Pinch client resolved from product’s merchant
+- [ ] Checkout loads product/price from DB; ignores client price; Pinch client resolved from order’s merchant
+- [ ] Card PAN/CVC never touch the API — only CaptureJS `creditCardToken`
 - [ ] Managed calls always send `Current-Merchant` when acting for a sub-merchant
-- [ ] BYOK secrets encrypted at rest; never returned to the client or logged
+- [ ] BYOK secrets encrypted at rest; never returned to the client or logged; publishable key ok for browser
 - [ ] Protected mutations scoped to the session merchant
-- [ ] Secrets only in server env; never `VITE_`-prefixed for API keys
+- [ ] Secrets only in server env; never `VITE_`-prefixed for Application secrets
 - [ ] CORS origin is explicit (`WEB_URL`), credentials enabled deliberately
 
 ## When stuck

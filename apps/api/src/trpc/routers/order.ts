@@ -1,5 +1,5 @@
 import {
-  orderCreateCheckoutInput,
+  orderCreateInput,
   orderGetBySessionInput,
   orderListForMerchantInput,
 } from "@buy-a-bit/shared";
@@ -7,13 +7,11 @@ import {
 import { protectedProcedure, publicProcedure, router } from "../trpc.js";
 
 export const orderRouter = router({
-  createCheckout: publicProcedure
-    .input(orderCreateCheckoutInput)
-    .mutation(async ({ input }) => {
-      // Day 1: create order + Pinch payment link → orderCreateCheckoutOutput
-      void input;
-      throw new Error("Not implemented");
-    }),
+  create: publicProcedure.input(orderCreateInput).mutation(async ({ input }) => {
+    // Day 1: create pending order → orderCreateOutput { orderId, payPath }
+    void input;
+    throw new Error("Not implemented");
+  }),
 
   getBySession: publicProcedure
     .input(orderGetBySessionInput)

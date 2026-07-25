@@ -9,7 +9,7 @@ export function ProductLandingPage() {
       <h1 className="text-3xl font-semibold">Product landing</h1>
       <p className="text-sm opacity-70">
         Public page from <code>product.getBySlug</code> — contact form →{" "}
-        <code>order.createCheckout</code>.
+        <code>order.create</code> → navigate to <code>/pay/:orderId</code>.
       </p>
       <form
         className="mt-2 flex flex-col gap-3"

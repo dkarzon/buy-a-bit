@@ -9,7 +9,9 @@ export const merchantMeOutput = z.object({
     .object({
       id: z.string().uuid(),
       businessName: z.string(),
-      pinchAccountId: z.string().nullable(),
+      pinchConnectionMode: z.enum(["managed", "byok"]).nullable(),
+      pinchMerchantId: z.string().nullable(),
+      pinchMerchantStatus: z.string().nullable(),
       storeSlug: z.string().nullable(),
       isStoreOpen: z.boolean(),
     })
@@ -25,9 +27,21 @@ export const merchantUpdateProfileInput = z.object({
   businessName: z.string().min(1).max(120),
 });
 
-export const merchantCreateInput = z.object({
-  businessName: z.string().min(1).max(120),
-});
+export const merchantCreateInput = z.discriminatedUnion("pinchConnectionMode", [
+  z.object({
+    businessName: z.string().min(1).max(120),
+    pinchConnectionMode: z.literal("managed"),
+    companyEmail: z.string().email().optional(),
+    companyPhone: z.string().optional(),
+  }),
+  z.object({
+    businessName: z.string().min(1).max(120),
+    pinchConnectionMode: z.literal("byok"),
+    pinchApplicationId: z.string().min(1),
+    pinchSecretKey: z.string().min(1),
+    pinchPublishableKey: z.string().min(1),
+  }),
+]);
 
 // ─── product ────────────────────────────────────────────────────────────────
 
@@ -87,21 +101,21 @@ export const productPublicOutput = z.object({
 
 // ─── order ──────────────────────────────────────────────────────────────────
 
-export const orderCreateCheckoutInput = z.object({
+export const orderCreateInput = z.object({
   productId: z.string().uuid(),
   customerName: z.string().min(1).max(120),
   customerEmail: z.string().email(),
   customerPhone: z.string().min(5).max(30).optional(),
 });
 
-/** Sync point: Pinch checkout URL for frontend redirect */
-export const orderCreateCheckoutOutput = z.object({
+/** Pending order → navigate to /pay/:orderId */
+export const orderCreateOutput = z.object({
   orderId: z.string().uuid(),
-  paymentUrl: z.string().url(),
+  payPath: z.string(), // e.g. /pay/{orderId}
 });
 
 export const orderGetBySessionInput = z.object({
-  session: z.string().uuid(), // orderId passed as ?session= on return URL
+  session: z.string().uuid(), // orderId passed as ?session= on confirmation
 });
 
 export const orderListForMerchantInput = z
@@ -125,11 +139,36 @@ export const orderListItem = z.object({
 
 // ─── payment ────────────────────────────────────────────────────────────────
 
-export const paymentVerifyReturnInput = z.object({
+export const paymentGetCheckoutContextInput = z.object({
+  orderId: z.string().uuid(),
+});
+
+export const paymentGetCheckoutContextOutput = z.object({
+  orderId: z.string().uuid(),
+  productName: z.string(),
+  customerName: z.string(),
+  priceCents: z.number().int(),
+  publishableKey: z.string().min(1),
+  status: orderStatusSchema,
+});
+
+export const paymentChargeInput = z.object({
+  orderId: z.string().uuid(),
+  creditCardToken: z.string().min(1),
+});
+
+export const paymentChargeOutput = z.object({
+  orderId: z.string().uuid(),
+  status: orderStatusSchema,
+  paymentId: z.string().nullable(),
+  confirmationPath: z.string(), // e.g. /payment/complete?session={orderId}
+});
+
+export const paymentGetStatusInput = z.object({
   session: z.string().uuid(), // orderId from /payment/complete?session=
 });
 
-export const paymentVerifyReturnOutput = z.object({
+export const paymentGetStatusOutput = z.object({
   orderId: z.string().uuid(),
   status: orderStatusSchema,
   productName: z.string(),

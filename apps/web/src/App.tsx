@@ -6,6 +6,7 @@ import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PaymentCompletePage } from "./pages/PaymentCompletePage";
+import { PaymentPage } from "./pages/PaymentPage";
 import { ProductEditPage } from "./pages/ProductEditPage";
 import { ProductLandingPage } from "./pages/ProductLandingPage";
 import { ProductNewPage } from "./pages/ProductNewPage";
@@ -17,6 +18,7 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/p/:slug" element={<ProductLandingPage />} />
+        <Route path="/pay/:orderId" element={<PaymentPage />} />
         <Route path="/payment/complete" element={<PaymentCompletePage />} />
 
         <Route element={<ProtectedRoute />}>

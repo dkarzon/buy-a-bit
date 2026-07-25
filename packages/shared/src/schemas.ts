@@ -4,11 +4,26 @@ import { z } from "zod";
 export const orderStatusSchema = z.enum(["pending", "paid", "failed"]);
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 
+export const pinchConnectionModeSchema = z.enum(["managed", "byok"]);
+export type PinchConnectionMode = z.infer<typeof pinchConnectionModeSchema>;
+
+export const pinchComplianceStatusSchema = z.enum([
+  "pending",
+  "in_review",
+  "approved",
+  "rejected",
+]);
+export type PinchComplianceStatus = z.infer<typeof pinchComplianceStatusSchema>;
+
 export const merchantSchema = z.object({
   id: z.string().uuid(),
   userId: z.string(),
-  pinchAccountId: z.string().nullable(),
   businessName: z.string().min(1),
+  pinchConnectionMode: pinchConnectionModeSchema.nullable(),
+  pinchMerchantId: z.string().nullable(),
+  pinchPublishableKey: z.string().nullable(),
+  pinchComplianceStatus: pinchComplianceStatusSchema.nullable(),
+  pinchMerchantStatus: z.string().nullable(),
   storeSlug: z.string().nullable(),
   description: z.string().nullable(),
   logoUrl: z.string().url().nullable(),
@@ -39,7 +54,7 @@ export const orderSchema = z.object({
   customerName: z.string().min(1),
   customerEmail: z.string().email(),
   customerPhone: z.string().nullable(),
-  paymentLinkId: z.string().nullable(),
+  payerId: z.string().nullable(),
   paymentId: z.string().nullable(),
   status: orderStatusSchema,
   createdAt: z.coerce.date(),

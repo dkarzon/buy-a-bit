@@ -15,7 +15,7 @@ Stack choices for the hackathon build, aligned with [idea1-buy-a-bit.md](./idea1
 | Database | **PostgreSQL + Drizzle ORM** | TypeScript-native, minimal boilerplate, excellent inference |
 | Migrations | **Drizzle Kit** | SQL migrations generated from schema; easy push/pull in dev |
 | Auth | **Better Auth** | Sessions, OAuth, and Drizzle integration out of the box; Pinch OAuth via generic OAuth plugin |
-| Payments | **Pinch REST API + webhooks** | Payment links, verification, status updates |
+| Payments | **Pinch CaptureJS + realtime API + webhooks** | Custom payment page; PCI off our servers |
 | QR codes | **`qrcode` (server-side PNG/SVG)** | Generated when a product is created |
 | File storage (images) | **Uploadthing** or **URL-only for MVP** | Skip S3 setup on day 1 if needed |
 | Deployment | **Railway** (API + Postgres) + **Cloudflare Pages** or **Vercel** (frontend) | Minimal config; Postgres included on Railway |
@@ -91,9 +91,10 @@ buy-a-bit/
 | `/products/new` | Create product *(MVP)* | Merchant |
 | `/products/:id` | Edit product, download QR *(MVP)* | Merchant |
 | `/admin/*` | Full merchant admin portal *(stretch — see below)* | Merchant |
-| `/p/:productId` | Customer product landing page | Public |
+| `/p/:productId` | Customer product landing page (contact → create order) | Public |
+| `/pay/:orderId` | Custom payment page (CaptureJS card form) | Public (order id) |
 | `/s/:storeSlug` | Customer store catalog page *(stretch)* | Public |
-| `/payment/complete` | Post-Pinch redirect + verify | Public (session id in query) |
+| `/payment/complete` | Post-charge confirmation + status | Public (session id in query) |
 
 ### UI approach
 
@@ -184,12 +185,12 @@ app.use("*", async (c, next) => {
 |--------|------------|-------|
 | `merchant` | `me`, `create`, `updateProfile`, `connectPinchByok`, `uploadComplianceDoc` | Protected; `create` branches managed vs BYOK |
 | `product` | `list`, `create`, `update`, `delete`, `getBySlug` | `getBySlug` public for landing page |
-| `order` | `createCheckout`, `getBySession`, `listForMerchant` | `createCheckout` creates order + Pinch payment link |
-| `payment` | `verifyReturn` | Called from `/payment/complete` page |
+| `order` | `create`, `getBySession`, `listForMerchant` | `create` = pending order from landing contact form |
+| `payment` | `getCheckoutContext`, `charge`, `getStatus` | Public; CaptureJS token → realtime charge |
 
 **Context:** `{ db, user, session, merchant }` injected per request. `merchant` is loaded from `merchants.userId = session.user.id` when authenticated. Pinch calls use `pinchClientForMerchant(merchant)` — never a single shared client for all tenants.
 
-**Middleware:** `protectedProcedure` requires a valid Better Auth session + linked merchant row; public procedures for landing/checkout.
+**Middleware:** `protectedProcedure` requires a valid Better Auth session + linked merchant row; public procedures for landing/checkout/charge.
 
 ### Pinch integration (service layer)
 
@@ -208,8 +209,9 @@ async function getAccessToken(applicationId: string, secretKey: string): Promise
 function createPinchClient(auth: PinchAuth) {
   return {
     createManagedMerchant(body),      // managed onboarding only; no Current-Merchant
-    createPaymentLink(order, returnUrl),
-    getPayment(paymentId),
+    createPayer(input),               // POST /payers
+    createRealtimePayment(input),     // POST /payments/realtime
+    getPayment(paymentId),            // GET /payments/{id}
     createWebhook(url, eventTypes),
     uploadComplianceDocument(...),   // managed; requires Current-Merchant
   };
@@ -228,26 +230,65 @@ export function pinchClientForMerchant(merchant: Merchant) {
     secretKey: decrypt(merchant.pinchSecretKeyEncrypted!),
   });
 }
+
+/** Safe for browser — never returns Application secrets */
+export function publishableKeyForMerchant(merchant: Merchant): string {
+  if (merchant.pinchConnectionMode === "managed") {
+    return process.env.PINCH_PUBLISHABLE_KEY!;
+  }
+  return merchant.pinchPublishableKey!;
+}
 ```
 
-**Request headers**
+**Request headers (server)**
 
 | Mode | `Authorization` | `Current-Merchant` |
 |------|-----------------|--------------------|
 | Managed | Bearer from **platform** `PINCH_APPLICATION_ID` / `PINCH_SECRET_KEY` | `mch_…` from `merchants.pinchMerchantId` |
 | BYOK | Bearer from **merchant** Application ID / Secret | omit |
 
-See [Managed Merchants Guide](https://docs.getpinch.com.au/docs/managed-merchants) — impersonation is always platform credentials + `Current-Merchant`, never the sub-merchant’s own secret.
+See [Managed Merchants Guide](https://docs.getpinch.com.au/docs/managed-merchants) — impersonation is always platform credentials + `Current-Merchant`.
+
+**Custom payment page flow** ([CaptureJS](https://docs.getpinch.com.au/docs/capturejs-tokenisation), [Credit card payments](https://docs.getpinch.com.au/docs/credit-card-payments)):
+
+```
+/p/:slug  →  order.create (pending)
+     →  /pay/:orderId
+           payment.getCheckoutContext → { publishableKey, amountCents, … }
+           CaptureJS createToken(card) → creditCardToken
+           payment.charge({ orderId, creditCardToken })
+             → createPayer + POST /payments/realtime
+     →  /payment/complete?session={orderId}
+```
+
+**Frontend CaptureJS**
+
+```html
+<script src="https://cdn.getpinch.com.au/capturejs/pinch.capture.v2.js"
+  integrity="sha384-…" crossorigin="anonymous"></script>
+```
+
+```typescript
+const capture = Pinch.Capture({ publishableKey }); // from getCheckoutContext
+const { token } = await capture.createToken({
+  sourceType: "credit-card",
+  cardNumber, expiryMonth, expiryYear, cvc, cardHolderName,
+});
+await trpc.payment.charge.mutate({ orderId, creditCardToken: token });
+```
 
 **Service functions**
 
 - `createManagedMerchant(input)` → `POST /merchants/managed`
-- `createPaymentLink(order, returnUrl)` → `POST /payment-links`
+- `createPayer(input)` → `POST /payers`
+- `createRealtimePayment({ payerId, amountCents, creditCardToken, metadata, description })` → `POST /payments/realtime`
 - `getPayment(paymentId)` → `GET /payments/{id}`
-- `subscribeMerchantWebhooks(merchant)` → `POST /webhooks` (managed: with `Current-Merchant`)
-- `verifyWebhookSignature(rawBody, headers, secret?)` → webhook security (platform secret and/or per-BYOK secret)
+- `subscribeMerchantWebhooks(merchant)` → `POST /webhooks`
+- `verifyWebhookSignature(rawBody, headers, secret?)` → webhook security
 
-Metadata attached to every payment link:
+**Do not implement** Payment Links (`POST /payment-links`) for MVP.
+
+Metadata attached to every realtime payment:
 
 ```json
 {
@@ -259,16 +300,14 @@ Metadata attached to every payment link:
 }
 ```
 
-**Return URL:** `{WEB_URL}/payment/complete?session={orderId}`
-
-**Webhook events:** payment success/failure → update `orders.status`, store `paymentId`.  
+**Webhook events:** `realtime-payment` (and related) → update `orders.status`, store `paymentId`.  
 Managed also: `compliance-updated` → update `pinchComplianceStatus` / `pinchMerchantStatus`.
 
-Use webhooks as source of truth; return-URL verification is a UX fallback if webhook is slow.
+Realtime API response drives immediate UX; webhooks reconcile / confirm.
 
-**`order.createCheckout`:** load product → load merchant → `pinchClientForMerchant(merchant)` → create link. Do not use a request-global Pinch client for checkout (customers are anonymous; merchant comes from the product).
+**`payment.charge`:** load order → product → merchant → `pinchClientForMerchant(merchant)` → payer + realtime charge. Amount always from `product.priceCents` (or frozen on order). Never trust client amount. Never accept raw card fields on the server.
 
-**Live-payment gate (managed):** reject live checkout if `pinchMerchantStatus !== "active"` (allow test/sandbox for demos).
+**Live-payment gate (managed):** reject live charge if `pinchMerchantStatus !== "active"` (allow test/sandbox for demos).
 
 ---
 
@@ -307,6 +346,7 @@ merchants
   pinchMerchantId     text                    // Pinch mch_… (required when managed)
   pinchApplicationId  text                    // BYOK Application ID (nullable when managed)
   pinchSecretKeyEncrypted text                // BYOK only; encrypt at rest
+  pinchPublishableKey text                    // BYOK pk_…; managed uses PINCH_PUBLISHABLE_KEY env
   pinchWebhookSecretEncrypted text            // optional; BYOK webhook verify
   pinchComplianceStatus enum: pending | in_review | approved | rejected | null
   pinchMerchantStatus   text                  // e.g. unverified | active
@@ -336,8 +376,8 @@ orders
   customerName    text NOT NULL
   customerEmail   text NOT NULL
   customerPhone   text
-  paymentLinkId   text
-  paymentId       text
+  payerId         text                 // Pinch pyr_… set at charge
+  paymentId       text                 // Pinch pmt_…
   status          enum: pending | paid | failed
   createdAt       timestamptz
   paidAt          timestamptz
@@ -460,8 +500,8 @@ Register the Pinch OAuth redirect URI in the Pinch dashboard:
 5. Compliance docs: upload API or manual Glassbox (hackathon).
 
 **BYOK path**
-1. Collect Application ID + Secret Key.
-2. Validate via token endpoint; encrypt and store secrets.
+1. Collect Application ID + Secret Key + Publishable Key (`pk_…`).
+2. Validate via token endpoint; encrypt and store secrets; store publishable key in plaintext (safe for browser).
 3. Save `pinchConnectionMode = byok`; optionally store `pinchMerchantId` if known.
 4. Register or ask merchant to point webhooks at `{API_URL}/webhooks/pinch`.
 
@@ -493,7 +533,7 @@ export const createContext = async (opts: { hono: Context }) => {
   const merchant = session?.user
     ? await db.query.merchants.findFirst({ where: eq(merchants.userId, session.user.id) })
     : null;
-  // Do not inject a single pinchClient here — checkout resolves via pinchClientForMerchant(product.merchant)
+  // Do not inject a single pinchClient here — charge resolves via pinchClientForMerchant(order.merchant)
   return { db, session, user: session?.user ?? null, merchant };
 };
 ```
@@ -513,9 +553,10 @@ No Better Auth account. Landing page collects name/email/phone; stored on the `o
 DATABASE_URL=
 BETTER_AUTH_SECRET=          # random 32+ char secret
 BETTER_AUTH_URL=http://localhost:3001
-# Platform Pinch Application (Managed Merchants + optional platform webhooks)
+# Platform Pinch Application (Managed Merchants + realtime charges)
 PINCH_APPLICATION_ID=        # OAuth client_id — not Merchant ID
 PINCH_SECRET_KEY=
+PINCH_PUBLISHABLE_KEY=       # pk_test_… / pk_live_… for CaptureJS (managed merchants)
 PINCH_WEBHOOK_SECRET=        # default/platform webhook signing secret
 PINCH_API_BASE_URL=https://api.getpinch.com.au/test   # or /live
 PINCH_AUTH_URL=https://auth.getpinch.com.au/connect/token
@@ -529,9 +570,11 @@ API_URL=http://localhost:3001
 
 # apps/web
 VITE_API_URL=http://localhost:3001
+# Prefer serving publishable keys via payment.getCheckoutContext (supports BYOK).
+# Do not put Application secrets in VITE_*.
 ```
 
-**Note:** Prefer `PINCH_APPLICATION_ID` + `PINCH_SECRET_KEY` over a legacy single `PINCH_API_KEY`. Never put Pinch secrets in `VITE_*` vars.
+**Note:** Prefer `PINCH_APPLICATION_ID` + `PINCH_SECRET_KEY` over a legacy single `PINCH_API_KEY`. Never put Pinch Application secrets in `VITE_*` vars. Publishable keys are client-safe but still prefer API-resolved keys so BYOK works per merchant.
 
 ### CORS
 
@@ -581,14 +624,14 @@ gantt
     section Person A — Backend
     Postgres + Drizzle + Better Auth     :a1, after t0, 90m
     tRPC product + order + Pinch         :a2, after a1, 120m
-    Webhooks + payment.verifyReturn      :a3, after a2, 90m
+    Webhooks + payment.getStatus         :a3, after a2, 90m
     Pinch OAuth + onboarding API         :a4, after a3, 60m
     Deploy API                           :a5, after a4, 45m
 
     section Person B — Frontend
     Web shell + routing + Tailwind       :b1, after t0, 60m
     Landing page + product form          :b2, after b1, 120m
-    Checkout redirect UX                 :b3, after b2, 60m
+    Custom payment page (CaptureJS)      :b3, after b2, 60m
     Payment complete + dashboard         :b4, after a3, 90m
     Login + onboarding UI                :b5, after a4, 60m
     NFC button + deploy web              :b6, after b5, 45m
@@ -614,14 +657,14 @@ Nothing else runs in parallel until **`packages/shared` exports the API contract
 | 1 | Postgres + Drizzle schema + `db:push` | Web shell: React Router, Tailwind, layout components | ✅ After Phase 0 |
 | 2 | Better Auth on Hono + email/password | tRPC client + `ProtectedRoute` + `/login` page shell | ✅ |
 | 3 | `product.create`, `product.getBySlug` + QR generation | `/p/:slug` landing page (mock → wire when ready) | ✅ |
-| 4 | `order.createCheckout` + Pinch payment link service | Product create form → calls `product.create` | ⚠️ B needs A's `product.create` first; B can build form UI in parallel |
-| 5 | Pinch redirect URL in checkout response | "Continue to Payment" button → redirect to Pinch | 🔗 Sync: checkout response shape |
+| 4 | `order.create` + `payment.charge` (payer + realtime) | Product create form → calls `product.create` | ⚠️ B needs A's `product.create` first; B can build form UI in parallel |
+| 5 | `payment.getCheckoutContext` (publishable key) | Custom `/pay/:orderId` page + CaptureJS | 🔗 Sync: charge input/output shapes |
 | 6 | — | Merchant `/products/new` form polish | ✅ While A finishes Pinch |
 | 7 | QR base64 in `product.create` response | Display QR on product success / edit page | 🔗 Sync: response includes `qrDataUrl` |
 
-**Day 1 milestone (both):** create product in dashboard → open landing page → redirect to Pinch checkout (payment can fail in sandbox — that's OK).
+**Day 1 milestone (both):** create product → open landing → pay on custom CaptureJS page (sandbox charge can fail — that's OK).
 
-**Critical path:** `order.createCheckout` + Pinch service (Person A) blocks the full loop. Person B should not wait idle — build landing page and forms against mocked tRPC responses, then swap in real calls.
+**Critical path:** `payment.charge` + Pinch realtime service (Person A) blocks the full loop. Person B should not wait idle — build landing + payment form against mocked tRPC, then swap in real calls.
 
 ---
 
@@ -630,7 +673,7 @@ Nothing else runs in parallel until **`packages/shared` exports the API contract
 | Step | Person A (backend) | Person B (frontend) | Parallel? |
 |------|-------------------|---------------------|-----------|
 | 1 | Webhook endpoint + order status updates | `/payment/complete` page UI | ✅ |
-| 2 | `payment.verifyReturn` procedure | Wire complete page → call verify + show success/fail | 🔗 Sync after A ships procedure |
+| 2 | `payment.getStatus` procedure | Wire complete page → poll status + show success/fail | 🔗 Sync after A ships procedure |
 | 3 | `product.list`, `order.listForMerchant` | Merchant dashboard (products + orders tables) | ✅ Once list procedures exist |
 | 4 | Pinch OAuth via `genericOAuth` plugin | Update `/login` to offer Pinch sign-in button | ✅ |
 | 5 | `merchant.create` / onboarding tRPC | `/onboarding` form (business name → merchant row) | ✅ |
@@ -653,7 +696,7 @@ Nothing else runs in parallel until **`packages/shared` exports the API contract
 | 1 | Schema: `isAvailable`, `storeSlug`, `sortOrder` + migrate | Init shadcn/ui + `/admin` layout shell | ✅ |
 | 2 | `product.setAvailability`, `product.reorder`, `merchant.updateStoreSettings` | Products table + Live toggle | 🔗 B can UI-first with mock toggle |
 | 3 | `product.listForStore`, `merchant.getStoreBySlug` (public) | Product edit form (React Hook Form) | ✅ |
-| 4 | Availability checks in `getBySlug` + `createCheckout` | Orders table with status filters | ✅ |
+| 4 | Availability checks in `getBySlug` + `order.create` / `payment.charge` | Orders table with status filters | ✅ |
 | 5 | Store QR generation endpoint (optional) | Store settings page | ✅ |
 | 6 | — | `/s/:storeSlug` catalog page (optional) | ✅ After A ships `listForStore` |
 
@@ -667,7 +710,7 @@ Nothing else runs in parallel until **`packages/shared` exports the API contract
 |------|---------------|-----|
 | Phase 0 | tRPC procedure names + input/output types | Merge `packages/shared` before splitting |
 | Day 1 midday | `product.create` response shape (includes QR) | Quick call or Slack message |
-| Day 1 afternoon | `order.createCheckout` return value (Pinch URL) | Shared type in `packages/shared` |
+| Day 1 afternoon | `payment.charge` + `getCheckoutContext` shapes | Shared type in `packages/shared` |
 | Day 2 morning | Order status enum + webhook payload mapping | Document in shared constants |
 | Day 2 afternoon | Production URLs for CORS + Pinch webhook | Pair on deploy |
 | Before judging | Full demo run on a real phone | Together |
@@ -678,8 +721,8 @@ These cannot run in parallel — hard dependencies:
 
 1. **Monorepo scaffold** before either track starts meaningful work.
 2. **`product.getBySlug`** before landing page can load real data.
-3. **`order.createCheckout`** before checkout redirect works end-to-end.
-4. **Webhook handler** before dashboard shows live order updates (polling `verifyReturn` is a temporary fallback).
+3. **`payment.charge`** before custom payment page works end-to-end.
+4. **Webhook handler** before dashboard shows live order updates (polling `payment.getStatus` is a temporary fallback).
 5. **Production deploy** before phone demo (unless using ngrok for local demo).
 
 ### Suggested hourly schedule (2-day hackathon)
@@ -690,7 +733,7 @@ These cannot run in parallel — hard dependencies:
 | **Day 1, H2–4** | tRPC product + order + Pinch service | Landing page + product form |
 | **Day 1, H5–6** | QR in create + fix integration bugs | Checkout UX + wire tRPC calls |
 | **Day 1, H7–8** | Help B debug CORS/cookies | Polish landing page + demo data |
-| **Day 2, H1–2** | Webhooks + verifyReturn | Payment complete page |
+| **Day 2, H1–2** | Webhooks + getStatus | Payment complete page |
 | **Day 2, H3–4** | List procedures + OAuth | Dashboard + onboarding UI |
 | **Day 2, H5** | Deploy API | Deploy web + NFC button |
 | **Day 2, H6–8** | E2E test together → fix → rehearse demo | E2E test together → fix → rehearse demo |
@@ -702,8 +745,8 @@ These cannot run in parallel — hard dependencies:
 1. Scaffold monorepo (pnpm, Vite web, Hono api).
 2. Docker Postgres + Better Auth schema (CLI) + app schema + `db:push`.
 3. Better Auth on Hono (`/api/auth/*`) + email/password sign-up for dev.
-4. tRPC: `product.create`, `product.getBySlug`, `order.createCheckout`.
-5. Pinch payment link via `pinchClientForMerchant` (managed `Current-Merchant` or BYOK).
+4. tRPC: `product.create`, `product.getBySlug`, `order.create`, `payment.charge`.
+5. CaptureJS payment page + realtime charge via `pinchClientForMerchant` (managed `Current-Merchant` or BYOK).
 6. Landing page UI + merchant product form.
 7. QR generation on create.
 8. Onboarding: managed create **or** BYOK key paste + validate.
@@ -711,7 +754,7 @@ These cannot run in parallel — hard dependencies:
 ### Day 2 — Complete the demo (reference checklist)
 
 1. Webhook endpoint + order status updates.
-2. `/payment/complete` + `payment.verifyReturn`.
+2. `/payment/complete` + `payment.getStatus`.
 3. Merchant dashboard (products list + orders).
 4. Pinch OAuth via Better Auth `genericOAuth` plugin (replace email/password if ready).
 5. Merchant onboarding: managed merchant create **or** BYOK keys; link `merchants` row to auth user.
@@ -820,7 +863,7 @@ product_variants
 
 - Customer `/p/:slug` returns 404 or "unavailable" if `!product.isAvailable` or `!merchant.isStoreOpen`.
 - Store catalog `/s/:storeSlug` lists only products where `isAvailable = true` ordered by `sortOrder`.
-- Checkout still validates availability server-side in `order.createCheckout` (don't trust the client).
+- Checkout still validates availability server-side in `order.create` / `payment.charge` (don't trust the client).
 
 ### tRPC additions
 
