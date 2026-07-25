@@ -1,0 +1,10 @@
+# Dependencies and CDK artifacts
+node_modules/
+cdk.out/
+*.d.ts.map
+
+# TypeScript emit (if you run tsc locally)
+dist/
+
+# OS
+.DS_Store
