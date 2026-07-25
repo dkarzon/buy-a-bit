@@ -20,23 +20,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js (apps/api)
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install
+      - name: Install dependencies (apps/api)
+        run: cd apps/api && npm install
 
       - name: Build apps/api
-        run: pnpm --filter api build
+        run: cd apps/api && npm run build --if-present
+
+      - name: Setup Node.js (apps/web)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies (apps/web)
+        run: cd apps/web && npm install
 
       - name: Build apps/web
-        run: pnpm --filter web build
+        run: cd apps/web && npm run build --if-present
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6

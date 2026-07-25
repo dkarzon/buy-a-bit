@@ -54,12 +54,8 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-              # Repos created on/after 2026-07-15 emit immutable IDs in `sub`
-              # (repo:ORG@ORG_ID/REPO@REPO_ID:...). Include both patterns.
               StringLike:
-                token.actions.githubusercontent.com:sub:
-                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/*
-                  - !Sub repo:${GitHubOrg}@*/${GitHubRepo}@*:ref:refs/heads/*
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/*
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AdministratorAccess
 
