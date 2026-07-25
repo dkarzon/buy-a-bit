@@ -6,7 +6,12 @@ import {
 import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-import { merchants, orders, products } from "../../db/schema.js";
+import type { db as DbClient } from "../../db/index.js";
+import { merchants, orderItems, orders, products } from "../../db/schema.js";
+import {
+  summarizeOrderItems,
+  toPaymentLines,
+} from "../../services/orders.js";
 import {
   isPinchLiveMode,
   orderStatusFromPinchPayment,
@@ -15,6 +20,21 @@ import {
   splitCustomerName,
 } from "../../services/pinch.js";
 import { publicProcedure, router } from "../trpc.js";
+
+async function loadOrderItems(db: typeof DbClient, orderId: string) {
+  return db
+    .select({
+      productId: orderItems.productId,
+      productName: orderItems.productName,
+      quantity: orderItems.quantity,
+      lineTotalCents: orderItems.lineTotalCents,
+      isAvailable: products.isAvailable,
+      stockCount: products.stockCount,
+    })
+    .from(orderItems)
+    .innerJoin(products, eq(orderItems.productId, products.id))
+    .where(eq(orderItems.orderId, orderId));
+}
 
 export const paymentRouter = router({
   getCheckoutContext: publicProcedure
@@ -25,12 +45,10 @@ export const paymentRouter = router({
           orderId: orders.id,
           customerName: orders.customerName,
           status: orders.status,
-          productName: products.name,
-          priceCents: products.priceCents,
+          totalCents: orders.totalCents,
           merchant: merchants,
         })
         .from(orders)
-        .innerJoin(products, eq(orders.productId, products.id))
         .innerJoin(merchants, eq(orders.merchantId, merchants.id))
         .where(eq(orders.id, input.orderId))
         .limit(1);
@@ -39,6 +57,14 @@ export const paymentRouter = router({
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Order not found",
+        });
+      }
+
+      const items = await loadOrderItems(ctx.db, row.orderId);
+      if (items.length === 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Order has no line items",
         });
       }
 
@@ -55,11 +81,14 @@ export const paymentRouter = router({
         });
       }
 
+      const lines = toPaymentLines(items);
+
       return {
         orderId: row.orderId,
-        productName: row.productName,
+        productName: summarizeOrderItems(lines),
         customerName: row.customerName,
-        priceCents: row.priceCents,
+        totalCents: row.totalCents,
+        items: lines,
         publishableKey,
         status: row.status,
       };
@@ -71,11 +100,9 @@ export const paymentRouter = router({
       const [row] = await ctx.db
         .select({
           order: orders,
-          product: products,
           merchant: merchants,
         })
         .from(orders)
-        .innerJoin(products, eq(orders.productId, products.id))
         .innerJoin(merchants, eq(orders.merchantId, merchants.id))
         .where(eq(orders.id, input.orderId))
         .limit(1);
@@ -87,7 +114,7 @@ export const paymentRouter = router({
         });
       }
 
-      const { order, product, merchant } = row;
+      const { order, merchant } = row;
 
       if (order.status === "paid") {
         return {
@@ -105,18 +132,30 @@ export const paymentRouter = router({
         });
       }
 
-      if (!product.isAvailable) {
+      const items = await loadOrderItems(ctx.db, order.id);
+      if (items.length === 0) {
         throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Product is not available",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Order has no line items",
         });
       }
 
-      if (product.stockCount !== null && product.stockCount <= 0) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Product is out of stock",
-        });
+      for (const item of items) {
+        if (!item.isAvailable) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `"${item.productName}" is not available`,
+          });
+        }
+        if (item.stockCount !== null && item.stockCount < item.quantity) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              item.stockCount <= 0
+                ? `"${item.productName}" is out of stock`
+                : `Not enough stock for "${item.productName}"`,
+          });
+        }
       }
 
       if (!merchant.isStoreOpen) {
@@ -152,6 +191,7 @@ export const paymentRouter = router({
       }
 
       const { firstName, lastName } = splitCustomerName(order.customerName);
+      const productName = summarizeOrderItems(items);
 
       let payerId = order.payerId;
       if (!payerId) {
@@ -178,13 +218,12 @@ export const paymentRouter = router({
       try {
         payment = await pinch.createRealtimePayment({
           payerId,
-          amountCents: product.priceCents,
+          amountCents: order.totalCents,
           creditCardToken: input.creditCardToken,
-          description: product.name.slice(0, 200),
+          description: productName.slice(0, 200),
           nonce: order.id,
           metadata: {
             orderId: order.id,
-            productId: product.id,
             merchantId: merchant.id,
             customerName: order.customerName,
             customerEmail: order.customerEmail,
@@ -237,11 +276,9 @@ export const paymentRouter = router({
           orderId: orders.id,
           status: orders.status,
           customerName: orders.customerName,
-          productName: products.name,
-          priceCents: products.priceCents,
+          totalCents: orders.totalCents,
         })
         .from(orders)
-        .innerJoin(products, eq(orders.productId, products.id))
         .where(eq(orders.id, input.session))
         .limit(1);
 
@@ -252,12 +289,31 @@ export const paymentRouter = router({
         });
       }
 
+      const items = await ctx.db
+        .select({
+          productName: orderItems.productName,
+          quantity: orderItems.quantity,
+          lineTotalCents: orderItems.lineTotalCents,
+        })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, row.orderId));
+
+      if (items.length === 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Order has no line items",
+        });
+      }
+
+      const lines = toPaymentLines(items);
+
       return {
         orderId: row.orderId,
         status: row.status,
-        productName: row.productName,
+        productName: summarizeOrderItems(lines),
         customerName: row.customerName,
-        priceCents: row.priceCents,
+        totalCents: row.totalCents,
+        items: lines,
       };
     }),
 });

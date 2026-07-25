@@ -12,7 +12,7 @@ export function AnalyticsPage() {
   const orders = (ordersQuery.data ?? []) as OrderListRecord[];
   const products = (productsQuery.data ?? []) as ProductRecord[];
   const paidOrders = orders.filter((order) => order.status === "paid");
-  const revenue = paidOrders.reduce((total, order) => total + order.priceCents, 0);
+  const revenue = paidOrders.reduce((total, order) => total + order.totalCents, 0);
   const conversion = orders.length ? Math.round((paidOrders.length / orders.length) * 100) : 0;
   const inventoryValue = products.reduce(
     (total, product) => total + product.priceCents * (product.stockCount ?? 0),
@@ -25,7 +25,7 @@ export function AnalyticsPage() {
   };
   const productRevenue = Array.from(
     paidOrders.reduce((map, order) => {
-      map.set(order.productName, (map.get(order.productName) ?? 0) + order.priceCents);
+      map.set(order.productName, (map.get(order.productName) ?? 0) + order.totalCents);
       return map;
     }, new Map<string, number>()),
   )

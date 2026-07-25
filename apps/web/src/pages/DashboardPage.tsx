@@ -26,7 +26,7 @@ export function DashboardPage() {
   const merchant = merchantQuery.data;
   const paidTotal = orders
     .filter((order) => order.status === "paid")
-    .reduce((total, order) => total + order.priceCents, 0);
+    .reduce((total, order) => total + order.totalCents, 0);
   const stats = [
     { label: "Total sales", value: `$${(paidTotal / 100).toFixed(2)}`, change: "Loaded from orders" },
     { label: "Active products", value: String(products.filter((product) => product.isAvailable).length), change: "Live inventory" },
@@ -137,7 +137,7 @@ export function DashboardPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
                         <h3>{order.customerName}</h3>
-                        <strong>${(order.priceCents / 100).toFixed(2)}</strong>
+                        <strong>${(order.totalCents / 100).toFixed(2)}</strong>
                       </div>
                       <p>{order.id.slice(0, 8)} · {relativeTime(order.createdAt)}</p>
                       <StatusPill status={order.status} />

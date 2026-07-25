@@ -122,7 +122,7 @@ export function PaymentPage() {
         <section className="summary-card">
           <div className="summary-total border-0 pt-0">
             <span>Total amount</span>
-            <strong><Money cents={checkout.priceCents} /></strong>
+            <strong><Money cents={checkout.totalCents} /></strong>
           </div>
         </section>
         <section className="checkout-section">

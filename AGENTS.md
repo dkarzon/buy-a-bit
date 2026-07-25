@@ -67,7 +67,7 @@ pnpm db:generate && pnpm db:migrate   # real migrations before shared/deployed D
 apps/api/src/
   index.ts          Hono: CORS, /health, /trpc/*, /webhooks/pinch (+ /api/auth/* Day 1)
   auth.ts           Better Auth (Day 1)
-  db/               Drizzle client + schema (auth tables + merchants/products/orders)
+  db/               Drizzle client + schema (auth tables + merchants/products/orders/order_items)
   trpc/             context, middleware, routers: merchant | product | order | payment
   services/         pinch.ts, qr.ts
   webhooks/pinch.ts raw body + signature verify
@@ -99,7 +99,7 @@ packages/shared/    contract of record for procedure I/O
 - **Types:** export `AppRouter` from API; web imports `api/router` for client typing.
 - **IDs:** UUIDs in shared schemas; product public URLs use **slug** (`/p/:slug`), not raw UUID.
 - **Return URL / confirmation:** `{WEB_URL}/payment/complete?session={orderId}` after custom-page charge (not a Pinch hosted return URL).
-- **Pinch metadata** on realtime payments: `orderId`, `productId`, `merchantId`, `customerName`, `customerEmail`.
+- **Pinch metadata** on realtime payments: `orderId`, `merchantId`, `customerName`, `customerEmail`.
 - **Payments:** CaptureJS client tokenisation + `POST /payments/realtime` — do not use Pinch Payment Links for MVP.
 - **DB:** one Drizzle schema file for auth + app tables; generate Better Auth tables via `@better-auth/cli generate` then merge.
 - **UI:** Tailwind utility styling; no required component library for MVP. Match existing page structure.

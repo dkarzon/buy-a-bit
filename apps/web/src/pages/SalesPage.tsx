@@ -17,7 +17,7 @@ export function SalesPage() {
   );
   const orders = (ordersQuery.data ?? []) as OrderListRecord[];
   const paidOrders = orders.filter((order) => order.status === "paid");
-  const revenue = paidOrders.reduce((total, order) => total + order.priceCents, 0);
+  const revenue = paidOrders.reduce((total, order) => total + order.totalCents, 0);
   const average = paidOrders.length ? Math.round(revenue / paidOrders.length) : 0;
 
   return (
@@ -74,7 +74,7 @@ export function SalesPage() {
                       <td><div className="table-primary"><strong>{order.customerName}</strong><span>{order.customerEmail}</span></div></td>
                       <td>{order.productName}</td>
                       <td><StatusPill status={order.status} /></td>
-                      <td><strong><Money cents={order.priceCents} /></strong></td>
+                      <td><strong><Money cents={order.totalCents} /></strong></td>
                       <td className="text-muted">{relativeTime(order.createdAt)}</td>
                     </tr>
                   ))}

@@ -27,7 +27,7 @@ export function CustomersPage() {
         email: order.customerEmail,
         name: order.customerName,
         orders: (current?.orders ?? 0) + 1,
-        paidCents: (current?.paidCents ?? 0) + (order.status === "paid" ? order.priceCents : 0),
+        paidCents: (current?.paidCents ?? 0) + (order.status === "paid" ? order.totalCents : 0),
         lastOrder: current && current.lastOrder > createdAt ? current.lastOrder : createdAt,
       });
       return map;

@@ -305,7 +305,7 @@ Managed also: `compliance-updated` → update `pinchComplianceStatus` / `pinchMe
 
 Realtime API response drives immediate UX; webhooks reconcile / confirm.
 
-**`payment.charge`:** load order → product → merchant → `pinchClientForMerchant(merchant)` → payer + realtime charge. Amount always from `product.priceCents` (or frozen on order). Never trust client amount. Never accept raw card fields on the server.
+**`payment.charge`:** load order → items → merchant → `pinchClientForMerchant(merchant)` → payer + realtime charge. Amount always from **`orders.totalCents`** (snapshotted at create from line items). Never trust client amount. Never accept raw card fields on the server.
 
 **Live-payment gate (managed):** reject live charge if `pinchMerchantStatus !== "active"` (allow test/sandbox for demos).
 
@@ -371,22 +371,31 @@ products
 
 orders
   id              uuid PK
-  productId       uuid FK → products.id
   merchantId      uuid FK → merchants.id
   customerName    text NOT NULL
   customerEmail   text NOT NULL
   customerPhone   text
+  totalCents      integer NOT NULL      // snapshotted sum of line totals at create
   payerId         text                 // Pinch pyr_… set at charge
   paymentId       text                 // Pinch pmt_…
   status          enum: pending | paid | failed
   createdAt       timestamptz
   paidAt          timestamptz
+
+order_items
+  id              uuid PK
+  orderId         uuid FK → orders.id ON DELETE CASCADE
+  productId       uuid FK → products.id (restrict)  // reference only; money from snapshots
+  productName     text NOT NULL        // snapshotted at create
+  unitPriceCents  integer NOT NULL     // snapshotted at create
+  quantity        integer NOT NULL
+  lineTotalCents  integer NOT NULL     // unitPriceCents * quantity
 ```
 
 ### Migration workflow
 
 1. **Generate Better Auth schema** with `@better-auth/cli generate` and merge into `apps/api/src/db/schema.ts`.
-2. **Define app schema** (merchants, products, orders) in the same file.
+2. **Define app schema** (merchants, products, orders, order_items) in the same file.
 3. **Generate migration:**
    ```bash
    pnpm --filter api db:generate   # drizzle-kit generate

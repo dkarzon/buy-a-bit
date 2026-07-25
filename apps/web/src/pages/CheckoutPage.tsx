@@ -29,7 +29,7 @@ export function CheckoutPage() {
     const form = new FormData(event.currentTarget);
     try {
       const result = (await createOrder.mutateAsync({
-        productId: product.id,
+        items: [{ productId: product.id, quantity: 1 }],
         customerName: String(form.get("name") ?? "").trim(),
         customerEmail: String(form.get("email") ?? "").trim(),
       })) as { orderId: string; payPath: string };

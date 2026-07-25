@@ -118,8 +118,13 @@ export const productPublicOutput = z.object({
 
 // ─── order ──────────────────────────────────────────────────────────────────
 
-export const orderCreateInput = z.object({
+export const orderCreateItemInput = z.object({
   productId: z.string().uuid(),
+  quantity: z.number().int().positive().default(1),
+});
+
+export const orderCreateInput = z.object({
+  items: z.array(orderCreateItemInput).min(1),
   customerName: z.string().min(1).max(120),
   customerEmail: z.string().email(),
   customerPhone: z.string().min(5).max(30).optional(),
@@ -144,12 +149,13 @@ export const orderListForMerchantInput = z
 
 export const orderListItem = z.object({
   id: z.string().uuid(),
-  productId: z.string().uuid(),
+  /** Display summary, e.g. "Widget" or "Widget + 2 more" */
   productName: z.string(),
+  itemCount: z.number().int().positive(),
   customerName: z.string(),
   customerEmail: z.string().email(),
   status: orderStatusSchema,
-  priceCents: z.number().int(),
+  totalCents: z.number().int().positive(),
   createdAt: z.coerce.date(),
   paidAt: z.coerce.date().nullable(),
 });
@@ -160,11 +166,19 @@ export const paymentGetCheckoutContextInput = z.object({
   orderId: z.string().uuid(),
 });
 
+export const paymentOrderLineOutput = z.object({
+  productName: z.string(),
+  quantity: z.number().int().positive(),
+  lineTotalCents: z.number().int().positive(),
+});
+
 export const paymentGetCheckoutContextOutput = z.object({
   orderId: z.string().uuid(),
+  /** Summary label for single-line UI */
   productName: z.string(),
   customerName: z.string(),
-  priceCents: z.number().int(),
+  totalCents: z.number().int().positive(),
+  items: z.array(paymentOrderLineOutput).min(1),
   publishableKey: z.string().min(1),
   status: orderStatusSchema,
 });
@@ -190,5 +204,6 @@ export const paymentGetStatusOutput = z.object({
   status: orderStatusSchema,
   productName: z.string(),
   customerName: z.string(),
-  priceCents: z.number().int(),
+  totalCents: z.number().int().positive(),
+  items: z.array(paymentOrderLineOutput).min(1),
 });

@@ -65,7 +65,7 @@ export function PaymentCompletePage() {
             <span className="block text-muted">Order reference</span>
             <strong>{payment.orderId.slice(0, 8).toUpperCase()}</strong>
           </div>
-          <strong><Money cents={payment.priceCents} /></strong>
+          <strong><Money cents={payment.totalCents} /></strong>
         </div>
         {isPaid && <button className="button button-secondary w-full" onClick={() => window.print()}><Download size={17} /> Print receipt</button>}
         <Link className="button button-primary w-full" to="/">

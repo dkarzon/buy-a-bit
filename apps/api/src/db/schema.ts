@@ -154,15 +154,14 @@ export const products = pgTable("products", {
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
-  productId: uuid("product_id")
-    .notNull()
-    .references(() => products.id, { onDelete: "restrict" }),
   merchantId: uuid("merchant_id")
     .notNull()
     .references(() => merchants.id, { onDelete: "cascade" }),
   customerName: text("customer_name").notNull(),
   customerEmail: text("customer_email").notNull(),
   customerPhone: text("customer_phone"),
+  /** Snapshotted sum of line totals at create — never re-read from products */
+  totalCents: integer("total_cents").notNull(),
   payerId: text("payer_id"),
   paymentId: text("payment_id"),
   status: orderStatusEnum("status").default("pending").notNull(),
@@ -171,6 +170,25 @@ export const orders = pgTable("orders", {
     .notNull(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
 });
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    /** Snapshots — product name/price may change after the order */
+    productName: text("product_name").notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    quantity: integer("quantity").notNull(),
+    lineTotalCents: integer("line_total_cents").notNull(),
+  },
+  (table) => [index("order_items_order_id_idx").on(table.orderId)],
+);
 
 // --- Relations ---
 
@@ -211,16 +229,24 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     fields: [products.merchantId],
     references: [merchants.id],
   }),
-  orders: many(orders),
+  orderItems: many(orderItems),
 }));
 
-export const ordersRelations = relations(orders, ({ one }) => ({
-  product: one(products, {
-    fields: [orders.productId],
-    references: [products.id],
-  }),
+export const ordersRelations = relations(orders, ({ one, many }) => ({
   merchant: one(merchants, {
     fields: [orders.merchantId],
     references: [merchants.id],
+  }),
+  items: many(orderItems),
+}));
+
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id],
+  }),
+  product: one(products, {
+    fields: [orderItems.productId],
+    references: [products.id],
   }),
 }));

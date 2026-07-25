@@ -47,13 +47,25 @@ export const productSchema = z.object({
 });
 export type Product = z.infer<typeof productSchema>;
 
+export const orderItemSchema = z.object({
+  id: z.string().uuid(),
+  orderId: z.string().uuid(),
+  productId: z.string().uuid(),
+  productName: z.string().min(1),
+  unitPriceCents: z.number().int().positive(),
+  quantity: z.number().int().positive(),
+  lineTotalCents: z.number().int().positive(),
+});
+export type OrderItem = z.infer<typeof orderItemSchema>;
+
 export const orderSchema = z.object({
   id: z.string().uuid(),
-  productId: z.string().uuid(),
   merchantId: z.string().uuid(),
   customerName: z.string().min(1),
   customerEmail: z.string().email(),
   customerPhone: z.string().nullable(),
+  /** Snapshotted total — source of truth for charge and history */
+  totalCents: z.number().int().positive(),
   payerId: z.string().nullable(),
   paymentId: z.string().nullable(),
   status: orderStatusSchema,
