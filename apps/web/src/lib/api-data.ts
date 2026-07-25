@@ -11,7 +11,13 @@ import type { z } from "zod";
 export type ProductPublic = z.infer<typeof productPublicOutput>;
 export type ProductCreated = z.infer<typeof productCreateOutput>;
 export type ProductMerchantDetail = z.infer<typeof productMerchantDetailOutput>;
-export type OrderListRecord = z.infer<typeof orderListItem>;
+export type OrderListRecord = Omit<
+  z.infer<typeof orderListItem>,
+  "createdAt" | "paidAt"
+> & {
+  createdAt: Date | string;
+  paidAt: Date | string | null;
+};
 export type PaymentCheckoutContext = z.infer<typeof paymentGetCheckoutContextOutput>;
 export type PaymentStatus = z.infer<typeof paymentGetStatusOutput>;
 

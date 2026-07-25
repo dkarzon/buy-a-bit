@@ -3,7 +3,7 @@ import {
   orderGetBySessionInput,
   orderListForMerchantInput,
 } from "@buy-a-bit/shared";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { merchants, orders, products } from "../../db/schema.js";
@@ -79,17 +79,62 @@ export const orderRouter = router({
       };
     }),
 
+  /** Public confirmation lookup — `session` is the order id from ?session= */
   getBySession: publicProcedure
     .input(orderGetBySessionInput)
-    .query(async ({ input }) => {
-      void input;
-      return null;
+    .query(async ({ ctx, input }) => {
+      const [order] = await ctx.db
+        .select({
+          id: orders.id,
+          productId: orders.productId,
+          merchantId: orders.merchantId,
+          customerName: orders.customerName,
+          customerEmail: orders.customerEmail,
+          customerPhone: orders.customerPhone,
+          payerId: orders.payerId,
+          paymentId: orders.paymentId,
+          status: orders.status,
+          createdAt: orders.createdAt,
+          paidAt: orders.paidAt,
+        })
+        .from(orders)
+        .where(eq(orders.id, input.session))
+        .limit(1);
+
+      return order ?? null;
     }),
 
   listForMerchant: protectedProcedure
     .input(orderListForMerchantInput)
-    .query(async ({ input }) => {
-      void input;
-      return [];
+    .query(async ({ ctx, input }) => {
+      if (!ctx.merchant) {
+        return [];
+      }
+
+      const status = input?.status;
+      const limit = input?.limit ?? 50;
+
+      const conditions = [eq(orders.merchantId, ctx.merchant.id)];
+      if (status) {
+        conditions.push(eq(orders.status, status));
+      }
+
+      return ctx.db
+        .select({
+          id: orders.id,
+          productId: orders.productId,
+          productName: products.name,
+          customerName: orders.customerName,
+          customerEmail: orders.customerEmail,
+          status: orders.status,
+          priceCents: products.priceCents,
+          createdAt: orders.createdAt,
+          paidAt: orders.paidAt,
+        })
+        .from(orders)
+        .innerJoin(products, eq(orders.productId, products.id))
+        .where(and(...conditions))
+        .orderBy(desc(orders.createdAt))
+        .limit(limit);
     }),
 });
