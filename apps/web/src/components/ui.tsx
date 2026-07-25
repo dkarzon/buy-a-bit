@@ -120,7 +120,7 @@ export function Money({ cents }: { cents: number }) {
 const mobileItems = [
   { label: "Home", path: "/dashboard", icon: Home },
   { label: "Products", path: "/dashboard#inventory", icon: QrCode },
-  { label: "Settings", path: "/settings/payment", icon: Settings },
+  { label: "Settings", path: "/account/payment-methods", icon: Settings },
   { label: "Orders", path: "/dashboard?view=orders", icon: Package },
 ];
 
@@ -131,7 +131,9 @@ export function MobileNav() {
     <nav className="mobile-nav" aria-label="Mobile navigation">
       {mobileItems.map(({ label, path, icon: Icon }) => {
         const active =
-          (label === "Settings" && location.pathname.startsWith("/settings")) ||
+          (label === "Settings" &&
+            (location.pathname.startsWith("/settings") ||
+              location.pathname.startsWith("/account/payment-methods"))) ||
           (label === "Home" && location.pathname === "/dashboard");
         return (
           <Link key={label} to={path} className={active ? "active" : ""}>

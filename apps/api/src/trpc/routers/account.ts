@@ -1,8 +1,10 @@
 import {
   accountDeletePaymentMethodInput,
+  accountGetSaveCardContextInput,
   accountListOrdersInput,
+  accountSavePaymentMethodInput,
 } from "@buy-a-bit/shared";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import {
@@ -11,8 +13,13 @@ import {
   orderItems,
   orders,
 } from "../../db/schema.js";
+import { vaultCustomerCard } from "../../services/customer-payers.js";
 import { summarizeOrderItems } from "../../services/orders.js";
-import { pinchClientForMerchant } from "../../services/pinch.js";
+import {
+  pinchClientForMerchant,
+  publishableKeyForMerchant,
+  splitCustomerName,
+} from "../../services/pinch.js";
 import { protectedProcedure, router } from "../trpc.js";
 
 /** Signed-in customer's account — orders and saved payment methods. */
@@ -74,6 +81,116 @@ export const accountRouter = router({
           paidAt: order.paidAt,
         };
       });
+    }),
+
+  /** Open stores a customer can save a card against (one card per merchant). */
+  listMerchantsForCards: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db
+      .select({
+        id: merchants.id,
+        businessName: merchants.businessName,
+      })
+      .from(merchants)
+      .where(eq(merchants.isStoreOpen, true))
+      .orderBy(asc(merchants.businessName));
+
+    return rows;
+  }),
+
+  getSaveCardContext: protectedProcedure
+    .input(accountGetSaveCardContextInput)
+    .query(async ({ ctx, input }) => {
+      const merchant = await ctx.db.query.merchants.findFirst({
+        where: eq(merchants.id, input.merchantId),
+      });
+
+      if (!merchant || !merchant.isStoreOpen) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Store not found or not accepting cards",
+        });
+      }
+
+      let publishableKey: string;
+      try {
+        publishableKey = publishableKeyForMerchant(merchant);
+      } catch (err) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            err instanceof Error
+              ? err.message
+              : "This store is not ready to accept cards",
+        });
+      }
+
+      return {
+        merchantId: merchant.id,
+        merchantName: merchant.businessName,
+        publishableKey,
+      };
+    }),
+
+  savePaymentMethod: protectedProcedure
+    .input(accountSavePaymentMethodInput)
+    .mutation(async ({ ctx, input }) => {
+      const merchant = await ctx.db.query.merchants.findFirst({
+        where: eq(merchants.id, input.merchantId),
+      });
+
+      if (!merchant || !merchant.isStoreOpen) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Store not found or not accepting cards",
+        });
+      }
+
+      let pinch;
+      try {
+        pinch = pinchClientForMerchant(merchant);
+      } catch (err) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            err instanceof Error
+              ? err.message
+              : "This store is not ready to accept cards",
+        });
+      }
+
+      const displayName = ctx.user.name?.trim() || ctx.user.email.split("@")[0] || "Customer";
+      const { firstName, lastName } = splitCustomerName(displayName);
+
+      try {
+        const saved = await vaultCustomerCard(ctx.db, pinch, {
+          userId: ctx.user.id,
+          merchantId: merchant.id,
+          firstName,
+          lastName: lastName || undefined,
+          emailAddress: ctx.user.email,
+          creditCardToken: input.creditCardToken,
+        });
+
+        return {
+          id: saved.id,
+          merchantId: saved.merchantId,
+          merchantName: merchant.businessName,
+          cardScheme: saved.cardScheme,
+          cardLast4: saved.cardLast4,
+          cardExpiryMonth: saved.cardExpiryMonth,
+          cardExpiryYear: saved.cardExpiryYear,
+          cardHolderName: saved.cardHolderName,
+          cardSavedAt: saved.cardSavedAt,
+        };
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not save your card. Please try again.",
+        });
+      }
     }),
 
   listPaymentMethods: protectedProcedure.query(async ({ ctx }) => {

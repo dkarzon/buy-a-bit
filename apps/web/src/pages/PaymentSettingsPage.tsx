@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CreditCard, Settings, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, CreditCard, Settings, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -13,8 +13,11 @@ export function PaymentSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const utils = trpc.useUtils();
   const merchantQuery = trpc.merchant.me.useQuery();
+  const methodsQuery = trpc.account.listPaymentMethods.useQuery();
   const updateProfile = trpc.merchant.updateProfile.useMutation();
   const account = merchantQuery.data;
+  const savedCards = methodsQuery.data ?? [];
+  const cardCount = savedCards.length;
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,21 +56,50 @@ export function PaymentSettingsPage() {
       <header className="settings-header">
         <button onClick={() => navigate(-1)} aria-label="Back"><ArrowLeft size={19} /></button>
         <h1>Payment settings</h1>
-        <button aria-label="Settings"><Settings size={18} /></button>
+        <button
+          type="button"
+          aria-label="Manage payment methods"
+          onClick={() => navigate("/account/payment-methods")}
+        >
+          <Settings size={18} />
+        </button>
       </header>
 
       <div className="settings-main">
         <section>
-          <h2 className="eyebrow">Payment connection</h2>
+          <h2 className="eyebrow">Payment methods</h2>
+          <div className="saved-methods">
+            <Link to="/account/payment-methods" className="manage-payments-link">
+              <span className="payment-brand brand-card"><CreditCard size={17} /></span>
+              <span className="min-w-0 flex-1 text-left">
+                <strong>Manage payments</strong>
+                <small>
+                  {methodsQuery.isPending
+                    ? "Loading saved cards…"
+                    : cardCount > 0
+                      ? `${cardCount} saved card${cardCount === 1 ? "" : "s"} for checkout`
+                      : "Add or change your card for product checkout"}
+                </small>
+              </span>
+              <span className={`status ${cardCount > 0 ? "status-paid" : "status-pending"}`}>
+                {cardCount > 0 ? "Ready" : "Setup"}
+              </span>
+              <ChevronRight size={16} className="text-muted" />
+            </Link>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="eyebrow">Pinch connection</h2>
           <div className="saved-methods">
             <div className="flex min-h-16 items-center gap-3 rounded-lg border border-[var(--outline)] bg-white p-3">
               <span className="payment-brand brand-card"><CreditCard size={17} /></span>
               <span className="min-w-0 flex-1">
                 <strong className="block text-xs font-medium">
-                  {account.merchant.pinchConnectionMode === "byok" ? "Connected Pinch account" : "Managed payments"}
+                  {account.merchant.pinchConnectionMode === "byok" ? "Connected Pinch account" : "Managed merchant"}
                 </strong>
                 <small className="mt-1 block text-[10px] text-muted">
-                  Status: {account.merchant.pinchMerchantStatus ?? "pending setup"}
+                  Store payout status: {account.merchant.pinchMerchantStatus ?? "pending setup"}
                 </small>
               </span>
               <span className={`status ${account.merchant.pinchMerchantStatus === "active" ? "status-paid" : "status-pending"}`}>
@@ -90,12 +122,12 @@ export function PaymentSettingsPage() {
           <aside className="security-note">
             <ShieldCheck size={18} />
             <p>
-              <strong>Customer cards are vaulted in Pinch.</strong> Buyers save a card at checkout
-              (signed in). Manage yours under{" "}
+              <strong>Same cards as checkout.</strong>{" "}
               <Link to="/account/payment-methods" className="font-semibold text-primary">
-                Account → Payment methods
-              </Link>
-              . We only store Pinch references and display metadata — never full card numbers.
+                Manage payments
+              </Link>{" "}
+              opens the account payment settings used when buying a product. Cards are vaulted in Pinch;
+              we only store a secure reference.
             </p>
           </aside>
 

@@ -530,6 +530,32 @@ h1, h2, h3, p { margin: 0; }
   border-radius: 9px;
   background: white;
 }
+.manage-payments-link {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 9px;
+  color: var(--ink);
+  background: white;
+}
+.manage-payments-link:hover {
+  border-color: #a9b9dc;
+  background: #f8faff;
+}
+.manage-payments-link strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.manage-payments-link small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
 .settings-card { display: grid; gap: 16px; padding: 16px; border: 1px solid var(--outline); border-radius: 12px; background: white; }
 .product-image-field { display: grid; gap: 10px; }
 .product-image-preview {
