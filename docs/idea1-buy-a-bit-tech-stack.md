@@ -86,7 +86,7 @@ buy-a-bit/
 | Route | Purpose | Auth |
 |-------|---------|------|
 | `/login` | Merchant sign-in (Pinch OAuth or email/password) | Public |
-| `/onboarding` | First-time merchant setup (business name) | Authenticated |
+| `/onboarding` | First-time setup: business name + Pinch mode (`managed` \| `byok`) | Authenticated |
 | `/dashboard` | Merchant home, order list *(MVP)* | Merchant |
 | `/products/new` | Create product *(MVP)* | Merchant |
 | `/products/:id` | Edit product, download QR *(MVP)* | Merchant |
@@ -182,22 +182,70 @@ app.use("*", async (c, next) => {
 
 | Router | Procedures | Notes |
 |--------|------------|-------|
-| `merchant` | `me`, `updateProfile` | Protected; reads session |
+| `merchant` | `me`, `create`, `updateProfile`, `connectPinchByok`, `uploadComplianceDoc` | Protected; `create` branches managed vs BYOK |
 | `product` | `list`, `create`, `update`, `delete`, `getBySlug` | `getBySlug` public for landing page |
 | `order` | `createCheckout`, `getBySession`, `listForMerchant` | `createCheckout` creates order + Pinch payment link |
 | `payment` | `verifyReturn` | Called from `/payment/complete` page |
 
-**Context:** `{ db, user, session, merchant, pinchClient }` injected per request. `merchant` is loaded from `merchants.userId = session.user.id` when authenticated.
+**Context:** `{ db, user, session, merchant }` injected per request. `merchant` is loaded from `merchants.userId = session.user.id` when authenticated. Pinch calls use `pinchClientForMerchant(merchant)` — never a single shared client for all tenants.
 
 **Middleware:** `protectedProcedure` requires a valid Better Auth session + linked merchant row; public procedures for landing/checkout.
 
 ### Pinch integration (service layer)
 
-Keep Pinch HTTP calls out of tRPC handlers:
+Keep Pinch HTTP calls out of tRPC handlers. Resolve credentials **per merchant**, not a single global client:
 
-- `createPaymentLink(order, returnUrl)` → POST `/payment-links`
-- `getPayment(paymentId)` → GET `/payments/{id}`
-- `verifyWebhookSignature(rawBody, headers)` → webhook security
+```typescript
+// apps/api/src/services/pinch.ts
+
+type PinchAuth =
+  | { mode: "managed"; pinchMerchantId: string } // platform env creds + Current-Merchant
+  | { mode: "byok"; applicationId: string; secretKey: string };
+
+async function getAccessToken(applicationId: string, secretKey: string): Promise<string>;
+// POST https://auth.getpinch.com.au/connect/token (client_credentials); cache ~1h
+
+function createPinchClient(auth: PinchAuth) {
+  return {
+    createManagedMerchant(body),      // managed onboarding only; no Current-Merchant
+    createPaymentLink(order, returnUrl),
+    getPayment(paymentId),
+    createWebhook(url, eventTypes),
+    uploadComplianceDocument(...),   // managed; requires Current-Merchant
+  };
+}
+
+export function pinchClientForMerchant(merchant: Merchant) {
+  if (merchant.pinchConnectionMode === "managed") {
+    return createPinchClient({
+      mode: "managed",
+      pinchMerchantId: merchant.pinchMerchantId!,
+    });
+  }
+  return createPinchClient({
+    mode: "byok",
+    applicationId: decrypt(merchant.pinchApplicationId!),
+    secretKey: decrypt(merchant.pinchSecretKeyEncrypted!),
+  });
+}
+```
+
+**Request headers**
+
+| Mode | `Authorization` | `Current-Merchant` |
+|------|-----------------|--------------------|
+| Managed | Bearer from **platform** `PINCH_APPLICATION_ID` / `PINCH_SECRET_KEY` | `mch_…` from `merchants.pinchMerchantId` |
+| BYOK | Bearer from **merchant** Application ID / Secret | omit |
+
+See [Managed Merchants Guide](https://docs.getpinch.com.au/docs/managed-merchants) — impersonation is always platform credentials + `Current-Merchant`, never the sub-merchant’s own secret.
+
+**Service functions**
+
+- `createManagedMerchant(input)` → `POST /merchants/managed`
+- `createPaymentLink(order, returnUrl)` → `POST /payment-links`
+- `getPayment(paymentId)` → `GET /payments/{id}`
+- `subscribeMerchantWebhooks(merchant)` → `POST /webhooks` (managed: with `Current-Merchant`)
+- `verifyWebhookSignature(rawBody, headers, secret?)` → webhook security (platform secret and/or per-BYOK secret)
 
 Metadata attached to every payment link:
 
@@ -213,9 +261,14 @@ Metadata attached to every payment link:
 
 **Return URL:** `{WEB_URL}/payment/complete?session={orderId}`
 
-**Webhook events:** `payment.succeeded`, `payment.failed` → update `orders.status`, store `paymentId`.
+**Webhook events:** payment success/failure → update `orders.status`, store `paymentId`.  
+Managed also: `compliance-updated` → update `pinchComplianceStatus` / `pinchMerchantStatus`.
 
 Use webhooks as source of truth; return-URL verification is a UX fallback if webhook is slow.
+
+**`order.createCheckout`:** load product → load merchant → `pinchClientForMerchant(merchant)` → create link. Do not use a request-global Pinch client for checkout (customers are anonymous; merchant comes from the product).
+
+**Live-payment gate (managed):** reject live checkout if `pinchMerchantStatus !== "active"` (allow test/sandbox for demos).
 
 ---
 
@@ -248,8 +301,15 @@ user, session, account, verification
 merchants
   id             uuid PK default gen_random_uuid()
   userId         text FK → user.id UNIQUE NOT NULL
-  pinchAccountId text                    // populated after Pinch OAuth link
   businessName   text NOT NULL
+  // Pinch connection — see idea1 "Pinch Connection Modes"
+  pinchConnectionMode enum: managed | byok
+  pinchMerchantId     text                    // Pinch mch_… (required when managed)
+  pinchApplicationId  text                    // BYOK Application ID (nullable when managed)
+  pinchSecretKeyEncrypted text                // BYOK only; encrypt at rest
+  pinchWebhookSecretEncrypted text            // optional; BYOK webhook verify
+  pinchComplianceStatus enum: pending | in_review | approved | rejected | null
+  pinchMerchantStatus   text                  // e.g. unverified | active
   storeSlug      text UNIQUE             // stretch: public store URL
   description    text                   // stretch
   logoUrl        text                   // stretch
@@ -387,13 +447,29 @@ Register the Pinch OAuth redirect URI in the Pinch dashboard:
 
 ### Merchant sign-in flow
 
-1. Frontend calls `authClient.signIn.social({ provider: "pinch", callbackURL: "/dashboard" })`.
-2. Better Auth redirects to Pinch, handles the callback at `/api/auth/callback/pinch`, creates/updates `user` + `account` rows, and sets an httpOnly session cookie.
-3. On first login, redirect to `/onboarding` if no `merchants` row exists; collect `businessName` and create `merchants` row linked to `session.user.id`.
-4. Store `pinchAccountId` from the OAuth `account` record (provider account ID) on the merchant row.
+1. Frontend calls `authClient.signIn.email` (or social Pinch OAuth if configured).
+2. Better Auth sets an httpOnly session cookie.
+3. On first login, redirect to `/onboarding` if no `merchants` row exists.
+4. Onboarding collects `businessName` **and** Pinch connection choice:
+
+**Managed path**
+1. Collect company/contact (+ bank fields when going live).
+2. `merchant.create` → `POST /merchants/managed` with platform credentials.
+3. Save `pinchConnectionMode = managed`, `pinchMerchantId = mch_…`, compliance fields `pending` / `unverified`.
+4. `subscribeMerchantWebhooks` with `Current-Merchant`.
+5. Compliance docs: upload API or manual Glassbox (hackathon).
+
+**BYOK path**
+1. Collect Application ID + Secret Key.
+2. Validate via token endpoint; encrypt and store secrets.
+3. Save `pinchConnectionMode = byok`; optionally store `pinchMerchantId` if known.
+4. Register or ask merchant to point webhooks at `{API_URL}/webhooks/pinch`.
+
 5. tRPC `protectedProcedure` reads session via `auth.api.getSession`, loads merchant by `userId`.
 
-**Hackathon fallback:** enable `emailAndPassword` and skip Pinch OAuth on day 1; merchants sign up with email, then paste a Pinch API key on onboarding. Swap to OAuth when Pinch credentials are ready.
+**Hackathon fallback:** email/password + **BYOK paste keys** is the fastest path if Managed Merchants is not enabled on the master account. Prefer managed when available so demos need only platform env credentials.
+
+Replace the older “single `PINCH_API_KEY` for everyone” assumption: platform keys are only for **managed** impersonation; BYOK merchants never share those keys.
 
 ### Frontend route protection
 
@@ -417,7 +493,8 @@ export const createContext = async (opts: { hono: Context }) => {
   const merchant = session?.user
     ? await db.query.merchants.findFirst({ where: eq(merchants.userId, session.user.id) })
     : null;
-  return { db, session, user: session?.user ?? null, merchant, pinchClient };
+  // Do not inject a single pinchClient here — checkout resolves via pinchClientForMerchant(product.merchant)
+  return { db, session, user: session?.user ?? null, merchant };
 };
 ```
 
@@ -436,8 +513,15 @@ No Better Auth account. Landing page collects name/email/phone; stored on the `o
 DATABASE_URL=
 BETTER_AUTH_SECRET=          # random 32+ char secret
 BETTER_AUTH_URL=http://localhost:3001
-PINCH_API_KEY=
-PINCH_WEBHOOK_SECRET=
+# Platform Pinch Application (Managed Merchants + optional platform webhooks)
+PINCH_APPLICATION_ID=        # OAuth client_id — not Merchant ID
+PINCH_SECRET_KEY=
+PINCH_WEBHOOK_SECRET=        # default/platform webhook signing secret
+PINCH_API_BASE_URL=https://api.getpinch.com.au/test   # or /live
+PINCH_AUTH_URL=https://auth.getpinch.com.au/connect/token
+# Optional: encrypt BYOK secrets at rest (AES key, 32 bytes base64)
+CREDENTIALS_ENCRYPTION_KEY=
+# Optional Pinch OAuth for merchant login (separate from API Application auth)
 PINCH_OAUTH_CLIENT_ID=
 PINCH_OAUTH_CLIENT_SECRET=
 WEB_URL=http://localhost:5173
@@ -446,6 +530,8 @@ API_URL=http://localhost:3001
 # apps/web
 VITE_API_URL=http://localhost:3001
 ```
+
+**Note:** Prefer `PINCH_APPLICATION_ID` + `PINCH_SECRET_KEY` over a legacy single `PINCH_API_KEY`. Never put Pinch secrets in `VITE_*` vars.
 
 ### CORS
 
@@ -617,9 +703,10 @@ These cannot run in parallel — hard dependencies:
 2. Docker Postgres + Better Auth schema (CLI) + app schema + `db:push`.
 3. Better Auth on Hono (`/api/auth/*`) + email/password sign-up for dev.
 4. tRPC: `product.create`, `product.getBySlug`, `order.createCheckout`.
-5. Pinch payment link creation + redirect.
+5. Pinch payment link via `pinchClientForMerchant` (managed `Current-Merchant` or BYOK).
 6. Landing page UI + merchant product form.
 7. QR generation on create.
+8. Onboarding: managed create **or** BYOK key paste + validate.
 
 ### Day 2 — Complete the demo (reference checklist)
 
@@ -627,7 +714,7 @@ These cannot run in parallel — hard dependencies:
 2. `/payment/complete` + `payment.verifyReturn`.
 3. Merchant dashboard (products list + orders).
 4. Pinch OAuth via Better Auth `genericOAuth` plugin (replace email/password if ready).
-5. Merchant onboarding flow (link `merchants` row to auth user).
+5. Merchant onboarding: managed merchant create **or** BYOK keys; link `merchants` row to auth user.
 6. NFC write button (optional).
 7. Deploy + end-to-end test on phone.
 
