@@ -5,6 +5,7 @@ import { LOCAL_API_PORT } from "@buy-a-bit/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import { auth } from "./auth.js";
 import { runMigrations } from "./db/migrate.js";
 import { createContext } from "./trpc/context.js";
 import { appRouter } from "./trpc/router.js";
@@ -12,6 +13,10 @@ import { pinchWebhook } from "./webhooks/pinch.js";
 
 async function main() {
   await runMigrations();
+
+  if (!process.env.BETTER_AUTH_SECRET) {
+    throw new Error("BETTER_AUTH_SECRET is not set");
+  }
 
   const webOrigin = process.env.WEB_URL ?? "http://localhost:5173";
   const port = Number(process.env.PORT ?? LOCAL_API_PORT);
@@ -25,12 +30,13 @@ async function main() {
       credentials: true,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type", "Authorization"],
+      maxAge: 600,
     }),
   );
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  // Day 1: Better Auth — app.on(["POST", "GET"], "/api/auth/*", ...)
+  app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
   app.use(
     "/trpc/*",

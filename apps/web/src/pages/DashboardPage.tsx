@@ -13,9 +13,10 @@ import {
   ShoppingBag,
   Users,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { Brand, Money, StatusPill } from "../components/ui";
+import { authClient } from "../lib/auth-client";
 import { dashboardStats, merchant, orders, products } from "../lib/mock-data";
 
 const navItems = [
@@ -27,6 +28,13 @@ const navItems = [
 ];
 
 export function DashboardPage() {
+  const navigate = useNavigate();
+
+  async function signOut() {
+    await authClient.signOut();
+    navigate("/login");
+  }
+
   return (
     <div className="dashboard-shell">
       <aside className="sidebar">
@@ -41,7 +49,9 @@ export function DashboardPage() {
         </nav>
         <div className="mt-auto grid gap-2">
           <a href="#help" className="sidebar-link"><CircleHelp size={17} /> Help</a>
-          <Link to="/login" className="sidebar-upgrade"><LogOut size={16} /> Sign out</Link>
+          <button type="button" className="sidebar-upgrade" onClick={() => void signOut()}>
+            <LogOut size={16} /> Sign out
+          </button>
         </div>
       </aside>
 

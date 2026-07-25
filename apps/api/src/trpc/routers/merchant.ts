@@ -6,15 +6,33 @@ import {
 import { protectedProcedure, router } from "../trpc.js";
 
 export const merchantRouter = router({
-  me: protectedProcedure.query(async () => {
-    // Day 1: return session user + merchant (or null merchant → onboarding)
-    return null;
+  me: protectedProcedure.query(async ({ ctx }) => {
+    const { user, merchant } = ctx;
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name ?? null,
+      },
+      merchant: merchant
+        ? {
+            id: merchant.id,
+            businessName: merchant.businessName,
+            pinchConnectionMode: merchant.pinchConnectionMode,
+            pinchMerchantId: merchant.pinchMerchantId,
+            pinchMerchantStatus: merchant.pinchMerchantStatus,
+            storeSlug: merchant.storeSlug,
+            isStoreOpen: merchant.isStoreOpen,
+          }
+        : null,
+    };
   }),
 
   create: protectedProcedure
     .input(merchantCreateInput)
     .mutation(async ({ input }) => {
-      // Day 1: create merchants row linked to session.user.id
+      // Day 2: create merchants row linked to session.user.id
       void input;
       return null;
     }),
