@@ -1,7 +1,7 @@
 import { ArrowLeft, Check, CreditCard, Settings, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { Button, Field, MobileNav } from "../components/ui";
 import { apiErrorMessage } from "../lib/api-data";
@@ -16,7 +16,7 @@ export function PaymentSettingsPage() {
   const updateProfile = trpc.merchant.updateProfile.useMutation();
   const account = merchantQuery.data;
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     const form = new FormData(event.currentTarget);
@@ -56,7 +56,7 @@ export function PaymentSettingsPage() {
         <button aria-label="Settings"><Settings size={18} /></button>
       </header>
 
-      <form key={account.merchant.id} className="settings-main" onSubmit={(event) => void save(event)}>
+      <div className="settings-main">
         <section>
           <h2 className="eyebrow">Payment connection</h2>
           <div className="saved-methods">
@@ -77,28 +77,37 @@ export function PaymentSettingsPage() {
           </div>
         </section>
 
-        <section>
-          <h2 className="eyebrow">Merchant profile</h2>
-          <div className="settings-card">
-            <Field label="Business name" name="businessName" defaultValue={account.merchant.businessName} required maxLength={120} />
-            <Field label="Account email" type="email" value={account.user.email} readOnly disabled />
-            <Field label="Store slug" value={account.merchant.storeSlug ?? "Assigned when your store goes live"} readOnly disabled />
-          </div>
-        </section>
+        <form key={account.merchant.id} className="grid gap-4" onSubmit={(event) => void saveProfile(event)}>
+          <section>
+            <h2 className="eyebrow">Merchant profile</h2>
+            <div className="settings-card">
+              <Field label="Business name" name="businessName" defaultValue={account.merchant.businessName} required maxLength={120} />
+              <Field label="Account email" type="email" value={account.user.email} readOnly disabled />
+              <Field label="Store slug" value={account.merchant.storeSlug ?? "Assigned when your store goes live"} readOnly disabled />
+            </div>
+          </section>
 
-        <aside className="security-note">
-          <ShieldCheck size={18} />
-          <p><strong>Payment credentials are managed securely.</strong> Buy-a-bit only receives tokenised card details and never sends raw card numbers to the application database.</p>
-        </aside>
+          <aside className="security-note">
+            <ShieldCheck size={18} />
+            <p>
+              <strong>Customer cards are vaulted in Pinch.</strong> Buyers save a card at checkout
+              (signed in). Manage yours under{" "}
+              <Link to="/account/payment-methods" className="font-semibold text-primary">
+                Account → Payment methods
+              </Link>
+              . We only store Pinch references and display metadata — never full card numbers.
+            </p>
+          </aside>
 
-        {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
-        <Button type="submit" className="w-full" disabled={updateProfile.isPending}>
-          {updateProfile.isPending ? "Saving…" : "Save changes"}
-        </Button>
-      </form>
+          {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+          <Button type="submit" className="w-full" disabled={updateProfile.isPending}>
+            {updateProfile.isPending ? "Saving…" : "Save profile changes"}
+          </Button>
+        </form>
+      </div>
 
       <MobileNav />
-      {saved && <div className="save-toast"><Check size={16} /> Payment settings saved</div>}
+      {saved && <div className="save-toast"><Check size={16} /> Profile saved</div>}
     </div>
   );
 }

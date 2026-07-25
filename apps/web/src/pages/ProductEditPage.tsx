@@ -12,6 +12,7 @@ import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { MerchantShell } from "../components/MerchantShell";
+import { ProductImageField } from "../components/ProductImageField";
 import { Button, Field, FormAlert, StatePanel } from "../components/ui";
 import {
   apiErrorMessage,
@@ -289,13 +290,12 @@ export function ProductEditPage() {
                   setFieldErrors((current) => ({ ...current, stockCount: undefined }))
                 }
               />
-              <Field
-                label="Image URL"
-                name="imageUrl"
-                type="url"
+              <ProductImageField
                 defaultValue={product.imageUrl ?? ""}
                 error={fieldErrors.imageUrl}
-                onChange={() => setFieldErrors((current) => ({ ...current, imageUrl: undefined }))}
+                onChange={() =>
+                  setFieldErrors((current) => ({ ...current, imageUrl: undefined }))
+                }
               />
               <label className="grid gap-1.5 text-sm font-medium text-ink">
                 Description

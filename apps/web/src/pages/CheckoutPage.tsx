@@ -79,7 +79,6 @@ export function CheckoutPage() {
             <img src={product.imageUrl ?? productPlaceholder} alt="" />
             <div className="min-w-0 flex-1">
               <h1>{product.name}</h1>
-              <p>Merchant blue · Express delivery</p>
               <p>Qty 1</p>
             </div>
           </div>

@@ -8,6 +8,8 @@ import {
 } from "@buy-a-bit/shared";
 import type { z } from "zod";
 
+import { isProductImageValue } from "./product-image";
+
 export type ProductPublic = z.infer<typeof productPublicOutput>;
 export type ProductCreated = z.infer<typeof productCreateOutput>;
 export type ProductMerchantDetail = z.infer<typeof productMerchantDetailOutput>;
@@ -147,15 +149,8 @@ export function parseProductForm(
     errors.stockCount = "Stock count is required.";
   }
 
-  if (imageUrl) {
-    try {
-      const parsed = new URL(imageUrl);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        errors.imageUrl = "Image URL must start with http:// or https://.";
-      }
-    } catch {
-      errors.imageUrl = "Enter a valid image URL.";
-    }
+  if (imageUrl && !isProductImageValue(imageUrl)) {
+    errors.imageUrl = "Upload a photo or enter a valid http(s) image URL.";
   }
 
   if (description.length > 2000) {

@@ -15,6 +15,25 @@ export const pinchComplianceStatusSchema = z.enum([
 ]);
 export type PinchComplianceStatus = z.infer<typeof pinchComplianceStatusSchema>;
 
+/** http(s) image URLs or compressed client-uploaded data URLs */
+export const productImageUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith("data:image/") && value.includes(";base64,")) {
+        return value.length <= 1_500_000;
+      }
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "Must be an http(s) image URL or uploaded product photo" },
+  );
+export type ProductImageUrl = z.infer<typeof productImageUrlSchema>;
+
 export const merchantSchema = z.object({
   id: z.string().uuid(),
   userId: z.string(),
@@ -39,7 +58,7 @@ export const productSchema = z.object({
   name: z.string().min(1),
   priceCents: z.number().int().positive(),
   description: z.string().nullable(),
-  imageUrl: z.string().url().nullable(),
+  imageUrl: productImageUrlSchema.nullable(),
   stockCount: z.number().int().nonnegative().nullable(),
   isAvailable: z.boolean(),
   sortOrder: z.number().int(),
