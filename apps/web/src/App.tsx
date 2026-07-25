@@ -1,9 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
+import { CustomersPage } from "./pages/CustomersPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HomePage } from "./pages/HomePage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PaymentCompletePage } from "./pages/PaymentCompletePage";
@@ -12,6 +15,7 @@ import { PaymentSettingsPage } from "./pages/PaymentSettingsPage";
 import { ProductEditPage } from "./pages/ProductEditPage";
 import { ProductLandingPage } from "./pages/ProductLandingPage";
 import { ProductNewPage } from "./pages/ProductNewPage";
+import { SalesPage } from "./pages/SalesPage";
 
 export function App() {
   return (
@@ -27,6 +31,10 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/sales" element={<SalesPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings/payment" element={<PaymentSettingsPage />} />
           <Route path="/products/new" element={<ProductNewPage />} />
           <Route path="/products/:id" element={<ProductEditPage />} />

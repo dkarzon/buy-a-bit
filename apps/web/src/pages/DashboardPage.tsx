@@ -1,22 +1,14 @@
 import {
-  Bell,
   ChevronDown,
-  CircleHelp,
   CreditCard,
-  LayoutDashboard,
-  LogOut,
   Package,
-  Plus,
   QrCode,
-  Search,
-  Settings,
   ShoppingBag,
-  Users,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
-import { Brand, Money, StatusPill } from "../components/ui";
-import { authClient } from "../lib/auth-client";
+import { MerchantShell } from "../components/MerchantShell";
+import { Money, StatusPill } from "../components/ui";
 import {
   initials,
   productPlaceholder,
@@ -25,16 +17,7 @@ import {
 import type { OrderListRecord, ProductRecord } from "../lib/api-data";
 import { trpc } from "../lib/trpc";
 
-const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, active: true },
-  { label: "Inventory", icon: Package },
-  { label: "Sales", icon: CreditCard },
-  { label: "Customers", icon: Users },
-  { label: "Analytics", icon: ShoppingBag },
-];
-
 export function DashboardPage() {
-  const navigate = useNavigate();
   const merchantQuery = trpc.merchant.me.useQuery();
   const productsQuery = trpc.product.list.useQuery();
   const ordersQuery = trpc.order.listForMerchant.useQuery({ limit: 4 });
@@ -50,53 +33,9 @@ export function DashboardPage() {
     { label: "Recent orders", value: String(orders.length), change: "Latest 4" },
   ];
 
-  async function signOut() {
-    await authClient.signOut();
-    navigate("/login");
-  }
-
   return (
-    <div className="dashboard-shell">
-      <aside className="sidebar">
-        <Brand />
-        <nav className="sidebar-nav" aria-label="Merchant navigation">
-          {navItems.map(({ label, icon: Icon, active }) => (
-            <a key={label} href={`#${label.toLowerCase()}`} className={active ? "active" : ""}>
-              <Icon size={17} />
-              {label}
-            </a>
-          ))}
-        </nav>
-        <div className="mt-auto grid gap-2">
-          <a href="#help" className="sidebar-link"><CircleHelp size={17} /> Help</a>
-          <button type="button" className="sidebar-upgrade" onClick={() => void signOut()}>
-            <LogOut size={16} /> Sign out
-          </button>
-        </div>
-      </aside>
-
-      <div className="dashboard-main">
-        <header className="dashboard-header">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold">Dashboard</span>
-            <label className="dashboard-search">
-              <Search size={15} />
-              <input aria-label="Search" placeholder="Search products, orders..." />
-            </label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link to="/products/new" className="button button-primary button-sm">
-              <Plus size={15} /> Add product
-            </Link>
-            <button className="icon-button" aria-label="Notifications"><Bell size={17} /></button>
-            <button className="icon-button" aria-label="Settings"><Settings size={17} /></button>
-            <button className="avatar" aria-label="Account menu">
-              {initials(merchant?.user.name ?? merchant?.user.email ?? "Merchant")}
-            </button>
-          </div>
-        </header>
-
-        <main className="dashboard-content">
+    <MerchantShell title="Dashboard" searchPlaceholder="Search products, orders...">
+      <main className="dashboard-content">
           <section className="flex flex-wrap items-start justify-between gap-5">
             <div>
               <h1>Hello, {merchant?.user.name ?? "Merchant"}!</h1>
@@ -145,7 +84,7 @@ export function DashboardPage() {
             <div>
               <div className="section-heading">
                 <h2>Live inventory</h2>
-                <a href="#inventory">View all</a>
+                <Link to="/inventory">View all</Link>
               </div>
               {productsQuery.isPending ? (
                 <div className="empty-state">Loading inventory…</div>
@@ -205,13 +144,12 @@ export function DashboardPage() {
                     </div>
                   </article>
                   ))}
-                  <a className="order-list-footer" href="#orders">View all transactions</a>
+                  <Link className="order-list-footer" to="/sales">View all transactions</Link>
                 </div>
               )}
             </div>
           </section>
-        </main>
-      </div>
-    </div>
+      </main>
+    </MerchantShell>
   );
 }
