@@ -14,7 +14,7 @@ Card data never hits Buy-a-bit servers — CaptureJS tokenises in the browser ([
 ## 🧭 **High‑Level User Flow**
 
 ### **1. Merchant Setup**
-- Merchant signs in (email/password or Pinch OAuth).
+- Merchant signs in (email/password via Better Auth).
 - On first onboarding, chooses how they connect to Pinch (see **Pinch Connection Modes** below):
   - **Managed** — platform creates a Pinch sub-merchant under Buy-a-bit’s credentials.
   - **Bring your own keys (BYOK)** — existing Pinch merchant pastes Application ID, Secret, and **Publishable Key**.
@@ -31,6 +31,7 @@ Card data never hits Buy-a-bit servers — CaptureJS tokenises in the browser ([
 
 ### **2. Customer Experience**
 - Customer taps NFC tag or scans QR code.
+- No customer account or Pinch OAuth login — customers stay anonymous.
 - They land on your **product landing page**:
   - Product details  
   - Price  

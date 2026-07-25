@@ -14,7 +14,7 @@ Stack choices for the hackathon build, aligned with [idea1-buy-a-bit.md](./idea1
 | Validation | **Zod** | Shared schemas between tRPC procedures and forms |
 | Database | **PostgreSQL + Drizzle ORM** | TypeScript-native, minimal boilerplate, excellent inference |
 | Migrations | **Drizzle Kit** | SQL migrations generated from schema; easy push/pull in dev |
-| Auth | **Better Auth** | Sessions, OAuth, and Drizzle integration out of the box; Pinch OAuth via generic OAuth plugin |
+| Auth | **Better Auth** | Merchant sessions, email/password, and Drizzle integration out of the box (no Pinch user OAuth — Pinch has no end-user login product) |
 | Payments | **Pinch CaptureJS + realtime API + webhooks** | Custom payment page; PCI off our servers |
 | QR codes | **`qrcode` (server-side PNG/SVG)** | Generated when a product is created |
 | File storage (images) | **Uploadthing** or **URL-only for MVP** | Skip S3 setup on day 1 if needed |
@@ -85,7 +85,7 @@ buy-a-bit/
 
 | Route | Purpose | Auth |
 |-------|---------|------|
-| `/login` | Merchant sign-in (Pinch OAuth or email/password) | Public |
+| `/login` | Merchant sign-in (email/password) | Public |
 | `/onboarding` | First-time setup: business name + Pinch mode (`managed` \| `byok`) | Authenticated |
 | `/dashboard` | Merchant home, order list *(MVP)* | Merchant |
 | `/products/new` | Create product *(MVP)* | Merchant |
@@ -114,7 +114,7 @@ export const authClient = createAuthClient({
 ```
 
 - **`authClient.useSession()`** — reactive session in dashboard routes; redirect to `/login` when null.
-- **`authClient.signIn.social({ provider: "pinch", callbackURL: "/dashboard" })`** — Pinch OAuth kickoff.
+- **`authClient.signIn.email` / `signUp.email`** — merchant email/password auth.
 - **`authClient.signOut()`** — clears session cookie via Better Auth API.
 - Import from **`better-auth/react`** (not `better-auth/client`) so `useSession` is a proper React hook.
 
@@ -155,7 +155,7 @@ export const authClient = createAuthClient({
 
 ```
 Hono app
-├── /api/auth/*      → Better Auth handler (sign-in, OAuth callback, session)
+├── /api/auth/*      → Better Auth handler (sign-in, sign-up, session)
 ├── /trpc/*          → tRPC handler (merchant, product, order routers)
 ├── /webhooks/pinch  → Raw POST; verify signature; update order status
 ├── /health          → Health check for deploy
@@ -437,7 +437,7 @@ orders
 
 ## Auth — Better Auth
 
-Better Auth handles sessions, cookies, OAuth callbacks, and account linking. Merchants authenticate; customers remain anonymous on landing pages.
+Better Auth handles merchant sessions and cookies. Merchants authenticate with email/password; customers remain anonymous on landing pages. Pinch does **not** offer OAuth/social login for end users (or merchants) — only OAuth2 **client credentials** for API Application auth (see Pinch service layer).
 
 ### Server config
 
@@ -445,7 +445,6 @@ Better Auth handles sessions, cookies, OAuth callbacks, and account linking. Mer
 // apps/api/src/auth.ts
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { genericOAuth } from "better-auth/plugins";
 import { db } from "./db";
 import * as schema from "./db/schema";
 
@@ -458,36 +457,16 @@ export const auth = betterAuth({
     schema,
   }),
   emailAndPassword: {
-    enabled: true,                            // hackathon fallback / dev login
+    enabled: true,
   },
-  plugins: [
-    genericOAuth({
-      config: [{
-        providerId: "pinch",
-        clientId: process.env.PINCH_OAUTH_CLIENT_ID!,
-        clientSecret: process.env.PINCH_OAUTH_CLIENT_SECRET!,
-        // Use discoveryUrl if Pinch is OIDC-compliant; otherwise set URLs manually:
-        authorizationUrl: "https://...",      // Pinch authorize endpoint
-        tokenUrl: "https://...",              // Pinch token endpoint
-        scopes: ["..."],
-        pkce: true,
-      }],
-    }),
-  ],
 });
 
 export type Session = typeof auth.$Infer.Session;
 ```
 
-Register the Pinch OAuth redirect URI in the Pinch dashboard:
-
-```
-{API_URL}/api/auth/callback/pinch
-```
-
 ### Merchant sign-in flow
 
-1. Frontend calls `authClient.signIn.email` (or social Pinch OAuth if configured).
+1. Frontend calls `authClient.signIn.email` (or `signUp.email`).
 2. Better Auth sets an httpOnly session cookie.
 3. On first login, redirect to `/onboarding` if no `merchants` row exists.
 4. Onboarding collects `businessName` **and** Pinch connection choice:
@@ -540,7 +519,7 @@ export const createContext = async (opts: { hono: Context }) => {
 
 ### Customer auth
 
-No Better Auth account. Landing page collects name/email/phone; stored on the `orders` row at checkout creation.
+No Better Auth account and **no Pinch OAuth/login** (Pinch does not provide end-user login). Landing page collects name/email/phone; stored on the `orders` row at checkout creation.
 
 ---
 
@@ -562,9 +541,6 @@ PINCH_API_BASE_URL=https://api.getpinch.com.au/test   # or /live
 PINCH_AUTH_URL=https://auth.getpinch.com.au/connect/token
 # Optional: encrypt BYOK secrets at rest (AES key, 32 bytes base64)
 CREDENTIALS_ENCRYPTION_KEY=
-# Optional Pinch OAuth for merchant login (separate from API Application auth)
-PINCH_OAUTH_CLIENT_ID=
-PINCH_OAUTH_CLIENT_SECRET=
 WEB_URL=http://localhost:5173
 API_URL=http://localhost:3001
 
@@ -625,7 +601,7 @@ gantt
     Postgres + Drizzle + Better Auth     :a1, after t0, 90m
     tRPC product + order + Pinch         :a2, after a1, 120m
     Webhooks + payment.getStatus         :a3, after a2, 90m
-    Pinch OAuth + onboarding API         :a4, after a3, 60m
+    Onboarding API (managed / BYOK)      :a4, after a3, 60m
     Deploy API                           :a5, after a4, 45m
 
     section Person B — Frontend
@@ -675,17 +651,16 @@ Nothing else runs in parallel until **`packages/shared` exports the API contract
 | 1 | Webhook endpoint + order status updates | `/payment/complete` page UI | ✅ |
 | 2 | `payment.getStatus` procedure | Wire complete page → poll status + show success/fail | 🔗 Sync after A ships procedure |
 | 3 | `product.list`, `order.listForMerchant` | Merchant dashboard (products + orders tables) | ✅ Once list procedures exist |
-| 4 | Pinch OAuth via `genericOAuth` plugin | Update `/login` to offer Pinch sign-in button | ✅ |
-| 5 | `merchant.create` / onboarding tRPC | `/onboarding` form (business name → merchant row) | ✅ |
-| 6 | — | NFC write button on product page (Web NFC API) | ✅ Fully frontend; no backend |
-| 7 | Deploy API + register webhook URL | Deploy web + set `VITE_API_URL` | ✅ Split deploy tasks |
+| 4 | `merchant.create` / onboarding tRPC | `/onboarding` form (business name + managed/BYOK) | ✅ |
+| 5 | — | NFC write button on product page (Web NFC API) | ✅ Fully frontend; no backend |
+| 6 | Deploy API + register webhook URL | Deploy web + set `VITE_API_URL` | ✅ Split deploy tasks |
 
 **Day 2 milestone (both):** full demo script — login → create product → tap NFC/scan QR → pay → order appears in dashboard.
 
 **Parallel wins on Day 2:**
 - Webhooks (A) + payment complete UI (B) — zero overlap.
 - Dashboard UI (B) can use mock order data while A builds webhook handler.
-- NFC button (B) is independent — good filler while waiting on OAuth config (A).
+- NFC button (B) is independent — good filler while A finishes onboarding API.
 
 ---
 
@@ -734,7 +709,7 @@ These cannot run in parallel — hard dependencies:
 | **Day 1, H5–6** | QR in create + fix integration bugs | Checkout UX + wire tRPC calls |
 | **Day 1, H7–8** | Help B debug CORS/cookies | Polish landing page + demo data |
 | **Day 2, H1–2** | Webhooks + getStatus | Payment complete page |
-| **Day 2, H3–4** | List procedures + OAuth | Dashboard + onboarding UI |
+| **Day 2, H3–4** | List procedures + onboarding API | Dashboard + onboarding UI |
 | **Day 2, H5** | Deploy API | Deploy web + NFC button |
 | **Day 2, H6–8** | E2E test together → fix → rehearse demo | E2E test together → fix → rehearse demo |
 
@@ -756,10 +731,9 @@ These cannot run in parallel — hard dependencies:
 1. Webhook endpoint + order status updates.
 2. `/payment/complete` + `payment.getStatus`.
 3. Merchant dashboard (products list + orders).
-4. Pinch OAuth via Better Auth `genericOAuth` plugin (replace email/password if ready).
-5. Merchant onboarding: managed merchant create **or** BYOK keys; link `merchants` row to auth user.
-6. NFC write button (optional).
-7. Deploy + end-to-end test on phone.
+4. Merchant onboarding: managed merchant create **or** BYOK keys; link `merchants` row to auth user.
+5. NFC write button (optional).
+6. Deploy + end-to-end test on phone.
 
 ---
 
@@ -905,7 +879,7 @@ NFC/QR generation options in admin:
 
 Better Auth already covers merchant login. The admin portal is the same `ProtectedRoute` + `protectedProcedure` boundary:
 
-1. Merchant signs in via Better Auth (Pinch OAuth or email/password).
+1. Merchant signs in via Better Auth (email/password).
 2. Onboarding creates the `merchants` row.
 3. All `/admin/*` routes require session + merchant.
 4. Every product mutation checks `product.merchantId === ctx.merchant.id` — merchants only manage their own store.
@@ -959,7 +933,7 @@ Estimated effort: **4–8 hours** after MVP, depending on shadcn setup and varia
 | **REST instead of tRPC** | More boilerplate; tRPC matches “TypeScript everywhere” |
 | **Supabase** | Fast start but adds vendor coupling; plain Postgres + Drizzle is enough |
 | **Express/Fastify** | Hono is smaller and has first-class tRPC adapter |
-| **Lucia / hand-rolled sessions** | Better Auth ships OAuth, email/password, and Drizzle adapter with less custom code |
+| **Lucia / hand-rolled sessions** | Better Auth ships email/password and Drizzle adapter with less custom code |
 
 ---
 
