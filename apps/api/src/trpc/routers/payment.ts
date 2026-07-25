@@ -11,6 +11,7 @@ import {
   isPinchLiveMode,
   orderStatusFromPinchPayment,
   pinchClientForMerchant,
+  publishableKeyForMerchant,
   splitCustomerName,
 } from "../../services/pinch.js";
 import { publicProcedure, router } from "../trpc.js";
@@ -18,10 +19,50 @@ import { publicProcedure, router } from "../trpc.js";
 export const paymentRouter = router({
   getCheckoutContext: publicProcedure
     .input(paymentGetCheckoutContextInput)
-    .query(async ({ input }) => {
-      // Day 1 step 5: order + publishableKey for CaptureJS
-      void input;
-      throw new Error("Not implemented");
+    .query(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .select({
+          orderId: orders.id,
+          customerName: orders.customerName,
+          status: orders.status,
+          productName: products.name,
+          priceCents: products.priceCents,
+          merchant: merchants,
+        })
+        .from(orders)
+        .innerJoin(products, eq(orders.productId, products.id))
+        .innerJoin(merchants, eq(orders.merchantId, merchants.id))
+        .where(eq(orders.id, input.orderId))
+        .limit(1);
+
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Order not found",
+        });
+      }
+
+      let publishableKey: string;
+      try {
+        publishableKey = publishableKeyForMerchant(row.merchant);
+      } catch (err) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Merchant publishable key is not configured",
+        });
+      }
+
+      return {
+        orderId: row.orderId,
+        productName: row.productName,
+        customerName: row.customerName,
+        priceCents: row.priceCents,
+        publishableKey,
+        status: row.status,
+      };
     }),
 
   charge: publicProcedure
