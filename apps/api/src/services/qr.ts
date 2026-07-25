@@ -1,7 +1,13 @@
+import QRCode from "qrcode";
+
 /**
- * QR generator — Day 1.
- * Encode `{WEB_URL}/p/{slug}` as PNG data URL for product.create response.
+ * Encode `{WEB_URL}/p/{slug}` as a PNG data URL for product.create response.
  */
-export async function generateProductQr(_landingPageUrl: string): Promise<string> {
-  throw new Error("QR generation not implemented");
+export async function generateProductQr(landingPageUrl: string): Promise<string> {
+  return QRCode.toDataURL(landingPageUrl, {
+    type: "image/png",
+    margin: 1,
+    width: 512,
+    errorCorrectionLevel: "M",
+  });
 }
