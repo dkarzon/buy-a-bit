@@ -1,5 +1,13 @@
-/**
- * Drizzle client — wired in Day 1 once DATABASE_URL + schema exist.
- * Phase 0 leaves this as a placeholder so the package structure is stable.
- */
-export const db = null as unknown as never;
+import "dotenv/config";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import * as schema from "./schema.js";
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+const client = postgres(connectionString);
+
+export const db = drizzle(client, { schema });
