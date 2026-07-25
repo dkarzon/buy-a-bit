@@ -1,0 +1,59 @@
+name: Deploy Generated App
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - scalebop-deploy
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+
+      - name: Setup Node.js (apps/api)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies (apps/api)
+        run: cd apps/api && npm install
+
+      - name: Build apps/api
+        run: cd apps/api && npm run build --if-present
+
+      - name: Setup Node.js (apps/web)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies (apps/web)
+        run: cd apps/web && npm install
+
+      - name: Build apps/web
+        run: cd apps/web && npm run build --if-present
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Install CDK dependencies
+        run: npm install
+        working-directory: iac/cdk
+
+      - name: Deploy CDK stack
+        run: npx cdk deploy --require-approval never
+        working-directory: iac/cdk
